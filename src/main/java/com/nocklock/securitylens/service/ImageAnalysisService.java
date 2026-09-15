@@ -17,7 +17,15 @@ import java.util.List;
 @Service
 public class ImageAnalysisService {
 
+    private final ImageMetadataService imageMetadataService;
+
+    public ImageAnalysisService(ImageMetadataService imageMetadataService) {
+        this.imageMetadataService = imageMetadataService;
+    }
+
     public AnalysisResponse analyze(MultipartFile image) {
+        MetadataResult metadataResult = imageMetadataService.extract(image);
+
         return new AnalysisResponse(
                 82,
                 RiskLevel.CRITICAL,
@@ -38,7 +46,7 @@ public class ImageAnalysisService {
                                 new BoundingBox(0.08, 0.34, 0.42, 0.05)
                         )
                 ),
-                new MetadataResult(true, true, false),
+                metadataResult,
                 List.of(
                         new InferenceResult(
                                 "RESIDENCE_LOCATION",

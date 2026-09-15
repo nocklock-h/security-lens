@@ -162,11 +162,19 @@ Response Example:
     }
   ],
 
-  "metadata": {
-    "gpsDetected": true,
-    "capturedAtDetected": true,
-    "deviceInfoDetected": false
-  },
+    "metadata": {
+      "gps": {
+        "detected": true,
+        "latitude": 37.1234,
+        "longitude": 126.1234
+      },
+      "capturedAt": "2026:09:15 18:32:41",
+      "device": {
+        "detected": true,
+        "make": "Apple",
+        "model": "iPhone ..."
+      }
+    },
 
   "inferences": [
     {
