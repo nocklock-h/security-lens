@@ -35,3 +35,12 @@ out/
 
 ### VS Code ###
 .vscode/
+
+# Security Lens local test files #
+test.jpg
+
+# IntelliJ HTTP Client responses #
+.idea/httpRequests/
+
+# Secret files #
+.env

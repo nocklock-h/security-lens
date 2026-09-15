@@ -1,0 +1,9 @@
+POST http://localhost:8081/api/v1/images/analyze
+Content-Type: multipart/form-data; boundary=SecurityLensBoundary
+
+--SecurityLensBoundary
+Content-Disposition: form-data; name="image"; filename="test.jpg"
+Content-Type: image/jpeg
+
+< ./test.jpg
+--SecurityLensBoundary--
