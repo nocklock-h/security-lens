@@ -6,6 +6,8 @@ import com.drew.metadata.Metadata;
 import com.drew.metadata.exif.ExifIFD0Directory;
 import com.drew.metadata.exif.ExifSubIFDDirectory;
 import com.drew.metadata.exif.GpsDirectory;
+import com.drew.lang.GeoLocation;
+import com.drew.lang.Rational;
 import com.nocklock.securitylens.dto.MetadataResult;
 import com.nocklock.securitylens.exception.ImageMetadataAnalysisException;
 import org.springframework.stereotype.Service;
@@ -39,14 +41,57 @@ public class ImageMetadataService {
         GpsDirectory gpsDirectory =
                 metadata.getFirstDirectoryOfType(GpsDirectory.class);
 
-        if (gpsDirectory == null || gpsDirectory.getGeoLocation() == null) {
+        if (gpsDirectory == null) {
             return new MetadataResult.GpsInfo(false, null, null);
         }
 
-        double latitude = gpsDirectory.getGeoLocation().getLatitude();
-        double longitude = gpsDirectory.getGeoLocation().getLongitude();
+        String latitudeRef =
+                gpsDirectory.getString(GpsDirectory.TAG_LATITUDE_REF);
 
-        return new MetadataResult.GpsInfo(true, latitude, longitude);
+        String longitudeRef =
+                gpsDirectory.getString(GpsDirectory.TAG_LONGITUDE_REF);
+
+        Rational[] latitudeValues =
+                gpsDirectory.getRationalArray(GpsDirectory.TAG_LATITUDE);
+
+        Rational[] longitudeValues =
+                gpsDirectory.getRationalArray(GpsDirectory.TAG_LONGITUDE);
+
+        if (latitudeRef == null
+                || latitudeRef.isBlank()
+                || longitudeRef == null
+                || longitudeRef.isBlank()
+                || !isValidGpsValues(latitudeValues)
+                || !isValidGpsValues(longitudeValues)) {
+
+            return new MetadataResult.GpsInfo(false, null, null);
+        }
+
+        GeoLocation geoLocation = gpsDirectory.getGeoLocation();
+
+        if (geoLocation == null) {
+            return new MetadataResult.GpsInfo(false, null, null);
+        }
+
+        return new MetadataResult.GpsInfo(
+                true,
+                geoLocation.getLatitude(),
+                geoLocation.getLongitude()
+        );
+    }
+
+    private boolean isValidGpsValues(Rational[] values) {
+        if (values == null || values.length != 3) {
+            return false;
+        }
+
+        for (Rational value : values) {
+            if (value == null || value.getDenominator() == 0) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private String extractCapturedAt(Metadata metadata) {
