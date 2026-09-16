@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1.0"
+    >
+
+    <meta
+            name="description"
+            content="Security Lens analyzes visible personal information and hidden image metadata before you share a photo."
+    >
+
+    <title>Security Lens | AI Privacy Scanner</title>
+
+    <link rel="stylesheet" href="/style.css">
+    <script src="/app.js" defer></script>
+</head>
+
+<body>
+
+<!--
+    키보드 사용자가 반복되는 헤더를 건너뛰고
+    바로 본문으로 이동할 수 있도록 제공
+-->
+<a
+        class="skip-link"
+        href="#mainContent"
+        data-i18n="ui.skip"
+>
+    Skip to main content
+</a>
+
+
+<header class="header">
+
+    <div class="header-inner">
+
+        <a
+                href="/"
+                class="brand"
+        >
+
+            <div
+                    class="brand-mark"
+                    aria-hidden="true"
+            >
+                S
+            </div>
+
+            <div>
+
+                <div class="brand-name">
+                    SECURITY LENS
+                </div>
+
+                <div
+                        class="brand-subtitle"
+                        data-i18n="ui.header.subtitle"
+                >
+                    AI Privacy Scanner
+                </div>
+
+            </div>
+
+        </a>
+
+
+        <div
+                class="header-status"
+                role="status"
+        >
+
+            <span
+                    class="status-dot"
+                    aria-hidden="true"
+            ></span>
+
+            <span data-i18n="ui.header.status">
+                AI Ready
+            </span>
+
+        </div>
+
+    </div>
+
+</header>
+
+
+<main
+        id="mainContent"
+        class="main-container"
+        tabindex="-1"
+>
+
+    <!-- ==============================
+         HERO
+         ============================== -->
+
+    <section
+            class="hero"
+            aria-labelledby="heroTitle"
+    >
+
+        <p
+                class="hero-badge"
+                data-i18n="ui.hero.badge"
+        >
+            AI-POWERED PRIVACY PROTECTION
+        </p>
+
+
+        <h1 id="heroTitle">
+
+            <span
+                    data-i18n="ui.hero.title.first"
+                    class="hero-title-main"
+            >
+                Share your photo.
+            </span>
+
+            <br>
+
+            <span data-i18n="ui.hero.title.second">
+                Not your privacy.
+            </span>
+
+        </h1>
+
+
+        <p data-i18n="ui.hero.description">
+            Detect visible personal information and hidden metadata
+            before sharing your photos.
+        </p>
+
+    </section>
+
+
+    <!-- ==============================
+         UPLOAD
+         ============================== -->
+
+    <section
+            id="uploadSection"
+            class="upload-section"
+            aria-labelledby="uploadTitle"
+    >
+
+        <div
+                id="dropZone"
+                class="drop-zone"
+        >
+
+            <div
+                    class="upload-icon"
+                    aria-hidden="true"
+            >
+                +
+            </div>
+
+
+            <h2
+                    id="uploadTitle"
+                    data-i18n="ui.upload.title"
+            >
+                Drop an image here
+            </h2>
+
+
+            <p
+                    id="uploadDescription"
+                    data-i18n="ui.upload.description"
+            >
+                Drag and drop an image or choose a file from your device.
+            </p>
+
+
+            <label
+                    for="fileInput"
+                    class="secondary-button file-label"
+                    data-i18n="ui.upload.button"
+            >
+                Choose Image
+            </label>
+
+
+            <input
+                    id="fileInput"
+                    name="image"
+                    type="file"
+                    accept="image/jpeg,image/png"
+                    class="sr-only"
+                    aria-describedby="uploadDescription"
+            >
+
+
+            <p
+                    class="upload-info"
+                    aria-label="Supported file formats"
+            >
+                JPG · JPEG · PNG
+            </p>
+
+        </div>
+
+    </section>
+
+
+    <!-- ==============================
+         SELECTED FILE
+         ============================== -->
+
+    <section
+            id="previewSection"
+            class="preview-section hidden"
+            aria-labelledby="selectedImageTitle"
+    >
+
+        <h2
+                id="selectedImageTitle"
+                class="sr-only"
+        >
+            Selected image
+        </h2>
+
+
+        <div class="selected-file-bar">
+
+            <div class="selected-file-info">
+
+                <div
+                        class="file-icon"
+                        aria-hidden="true"
+                >
+                    IMG
+                </div>
+
+
+                <div>
+
+                    <div
+                            id="fileName"
+                            class="file-name"
+                    ></div>
+
+                    <div
+                            id="fileSize"
+                            class="file-size"
+                    ></div>
+
+                </div>
+
+            </div>
+
+
+            <button
+                    id="resetButton"
+                    type="button"
+                    class="text-button"
+                    data-i18n="ui.preview.change"
+            >
+                Choose Another Image
+            </button>
+
+        </div>
+
+
+        <button
+                id="analyzeButton"
+                type="button"
+                class="analyze-button"
+        >
+
+            <span
+                    class="scan-icon"
+                    aria-hidden="true"
+            >
+                ◎
+            </span>
+
+            <span data-i18n="ui.preview.analyze">
+                Analyze Privacy Risk
+            </span>
+
+        </button>
+
+    </section>
+
+
+    <!-- ==============================
+         LOADING
+         ============================== -->
+
+    <section
+            id="loadingSection"
+            class="loading-section hidden"
+            aria-labelledby="analysisStatusTitle"
+            aria-busy="true"
+    >
+
+        <div
+                class="scanner"
+                aria-hidden="true"
+        >
+
+            <div class="scanner-ring"></div>
+
+            <div class="scanner-center">
+                S
+            </div>
+
+        </div>
+
+
+        <h2
+                id="analysisStatusTitle"
+                data-i18n="ui.loading.title"
+        >
+            Security Lens is analyzing your image
+        </h2>
+
+
+        <p
+                id="loadingMessage"
+                role="status"
+                aria-live="polite"
+        >
+            Preparing your image securely...
+        </p>
+
+
+        <div
+                id="loadingProgress"
+                class="loading-progress"
+                role="progressbar"
+                aria-labelledby="analysisStatusTitle"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-valuenow="0"
+        >
+
+            <div
+                    id="loadingProgressBar"
+                    class="loading-progress-bar"
+            ></div>
+
+        </div>
+
+    </section>
+
+
+    <!-- ==============================
+         RESULT
+         ============================== -->
+
+    <section
+            id="resultSection"
+            class="result-section hidden"
+            aria-labelledby="reportTitle"
+            tabindex="-1"
+    >
+
+        <div class="result-header">
+
+            <div>
+
+                <div
+                        class="section-eyebrow"
+                        data-i18n="ui.result.complete"
+                >
+                    ANALYSIS COMPLETE
+                </div>
+
+
+                <h2
+                        id="reportTitle"
+                        data-i18n="ui.result.title"
+                >
+                    Privacy Exposure Report
+                </h2>
+
+
+                <p data-i18n="ui.result.description">
+                    Review the privacy exposure detected in this image.
+                </p>
+
+            </div>
+
+
+            <button
+                    id="newAnalysisButton"
+                    type="button"
+                    class="secondary-button"
+                    data-i18n="ui.result.new"
+            >
+                Analyze Another Image
+            </button>
+
+        </div>
+
+
+        <div class="result-grid">
+
+            <!-- ==============================
+                 IMAGE PANEL
+                 ============================== -->
+
+            <article
+                    class="image-panel"
+                    aria-labelledby="imageScanHeading"
+            >
+
+                <h3
+                        id="imageScanHeading"
+                        class="sr-only"
+                        data-i18n="ui.result.imageScan"
+                >
+                    Image Scan
+                </h3>
+
+
+                <div class="panel-header">
+
+                    <div aria-hidden="true">
+
+                        <span class="panel-number">
+                            01
+                        </span>
+
+                        <span data-i18n="ui.result.imageScan">
+                            IMAGE SCAN
+                        </span>
+
+                    </div>
+
+
+                    <span
+                            id="imageResolution"
+                            class="panel-meta"
+                    ></span>
+
+                </div>
+
+
+                <!--
+                    BoundingBox가 들어갈 핵심 영역.
+
+                    previewImage:
+                    실제 이미지
+
+                    overlayLayer:
+                    OCR/PII BoundingBox 표시
+                -->
+                <div
+                        id="imageStage"
+                        class="image-stage"
+                >
+
+                    <img
+                            id="previewImage"
+                            src=""
+                            alt="Image selected for privacy analysis"
+                    >
+
+
+                    <div
+                            id="overlayLayer"
+                            class="overlay-layer"
+                            aria-hidden="true"
+                    ></div>
+
+                </div>
+
+
+                <div class="image-footer">
+
+                    <span
+                            class="scan-complete-dot"
+                            aria-hidden="true"
+                    ></span>
+
+
+                    <span data-i18n="ui.result.scanComplete">
+                        Image scan completed
+                    </span>
+
+                </div>
+
+            </article>
+
+
+            <!-- ==============================
+                 ANALYSIS PANEL
+                 ============================== -->
+
+            <div class="analysis-panel">
+
+                <!-- PRIVACY RISK -->
+
+                <article
+                        class="risk-card"
+                        aria-labelledby="riskTitle"
+                >
+
+                    <h3
+                            id="riskTitle"
+                            class="sr-only"
+                            data-i18n="ui.result.risk"
+                    >
+                        Privacy Risk
+                    </h3>
+
+
+                    <div
+                            class="risk-card-title"
+                            aria-hidden="true"
+                            data-i18n="ui.result.risk"
+                    >
+                        PRIVACY RISK
+                    </div>
+
+
+                    <div class="risk-content">
+
+                        <div
+                                id="riskCircle"
+                                class="risk-circle"
+                                aria-hidden="true"
+                        >
+
+                            <div class="risk-circle-inner">
+
+                                <span id="riskScore">
+                                    0
+                                </span>
+
+                                <small>
+                                    / 100
+                                </small>
+
+                            </div>
+
+                        </div>
+
+
+                        <div class="risk-info">
+
+                            <div
+                                    id="riskLevel"
+                                    class="risk-level"
+                            >
+                                UNKNOWN
+                            </div>
+
+
+                            <p
+                                    id="riskDescription"
+                                    aria-live="polite"
+                            >
+                                Privacy risk is being calculated.
+                            </p>
+
+                        </div>
+
+                    </div>
+
+                </article>
+
+
+                <!-- VISIBLE EXPOSURE -->
+
+                <article
+                        class="exposure-card"
+                        aria-labelledby="visibleExposureTitle"
+                >
+
+                    <h3
+                            id="visibleExposureTitle"
+                            class="sr-only"
+                            data-i18n="ui.result.visible"
+                    >
+                        Visible Exposure
+                    </h3>
+
+
+                    <div class="card-heading">
+
+                        <div aria-hidden="true">
+
+                            <span
+                                    class="card-icon visible-icon"
+                                    aria-hidden="true"
+                            >
+                                ◉
+                            </span>
+
+                            <span data-i18n="ui.result.visible">
+                                Visible Exposure
+                            </span>
+
+                        </div>
+
+
+                        <span
+                                id="visibleCount"
+                                class="count-badge"
+                        >
+                            0
+                        </span>
+
+                    </div>
+
+
+                    <p
+                            class="card-description"
+                            data-i18n="ui.result.visibleDescription"
+                    >
+                        Personal information directly visible in the image.
+                    </p>
+
+
+                    <div
+                            id="detectedItems"
+                            class="detected-list"
+                            aria-live="polite"
+                    ></div>
+
+                </article>
+
+
+                <!-- HIDDEN METADATA -->
+
+                <article
+                        class="exposure-card"
+                        aria-labelledby="hiddenExposureTitle"
+                >
+
+                    <h3
+                            id="hiddenExposureTitle"
+                            class="sr-only"
+                            data-i18n="ui.result.hidden"
+                    >
+                        Hidden Metadata
+                    </h3>
+
+
+                    <div class="card-heading">
+
+                        <div aria-hidden="true">
+
+                            <span
+                                    class="card-icon hidden-icon"
+                                    aria-hidden="true"
+                            >
+                                ◈
+                            </span>
+
+                            <span data-i18n="ui.result.hidden">
+                                Hidden Metadata
+                            </span>
+
+                        </div>
+
+
+                        <span
+                                id="hiddenCount"
+                                class="count-badge"
+                        >
+                            0
+                        </span>
+
+                    </div>
+
+
+                    <p
+                            class="card-description"
+                            data-i18n="ui.result.hiddenDescription"
+                    >
+                        Information stored inside the image file that may not be visible.
+                    </p>
+
+
+                    <div
+                            id="metadataItems"
+                            class="detected-list"
+                            aria-live="polite"
+                    ></div>
+
+                </article>
+
+
+                <!-- AI PRIVACY ANALYSIS -->
+
+                <article
+                        class="ai-card"
+                        aria-labelledby="aiAnalysisTitle"
+                >
+
+                    <div class="ai-heading">
+
+                        <div
+                                class="ai-logo"
+                                aria-hidden="true"
+                        >
+                            AI
+                        </div>
+
+
+                        <div>
+
+                            <div
+                                    id="aiAnalysisTitle"
+                                    class="ai-title"
+                                    role="heading"
+                                    aria-level="3"
+                                    data-i18n="ui.result.ai"
+                            >
+                                AI Privacy Analysis
+                            </div>
+
+
+                            <div
+                                    class="ai-subtitle"
+                                    data-i18n="ui.result.aiDescription"
+                            >
+                                Context-aware privacy assessment
+                            </div>
+
+                        </div>
+
+                    </div>
+
+
+                    <p
+                            id="aiSummary"
+                            class="ai-summary"
+                            aria-live="polite"
+                    ></p>
+
+                </article>
+
+
+                <!--
+                    다음 단계에서 실제 Masking / Blur 기능과 연결
+                -->
+                <button
+                        id="protectButton"
+                        type="button"
+                        class="protect-button"
+                        disabled
+                        aria-disabled="true"
+                >
+
+                    <span aria-hidden="true">
+                        ✦
+                    </span>
+
+                    <span data-i18n="ui.result.protect">
+                        Protect Image
+                    </span>
+
+                    <small data-i18n="ui.result.comingSoon">
+                        Coming soon
+                    </small>
+
+                </button>
+
+            </div>
+
+        </div>
+
+    </section>
+
+
+    <!-- ==============================
+         ERROR
+         ============================== -->
+
+    <section
+            id="errorSection"
+            class="error-section hidden"
+            role="alert"
+            aria-labelledby="errorTitle"
+    >
+
+        <div
+                class="error-icon"
+                aria-hidden="true"
+        >
+            !
+        </div>
+
+
+        <h2
+                id="errorTitle"
+                data-i18n="ui.error.title"
+        >
+            Analysis failed
+        </h2>
+
+
+        <p
+                id="errorMessage"
+                data-i18n="ui.error.description"
+        >
+            Security Lens could not complete the image analysis.
+        </p>
+
+
+        <button
+                id="retryButton"
+                type="button"
+                class="secondary-button"
+                data-i18n="ui.error.retry"
+        >
+            Try Again
+        </button>
+
+    </section>
+
+</main>
+
+
+<footer class="site-footer">
+
+    <div>
+        SECURITY LENS
+    </div>
+
+</footer>
+
+</body>
+</html>
