@@ -509,6 +509,11 @@ async function analyzeImage() {
 
                 syncOverlayToImage();
 
+                renderBoundingBoxes(
+                    data.detectedItems || [],
+                    data.image
+                );
+
                 resultSection.focus();
             }
         );
@@ -1161,6 +1166,73 @@ function syncOverlayToImage() {
         `${imageRect.height}px`;
 }
 
+function renderBoundingBoxes(
+    items,
+    image
+) {
+
+    overlayLayer.innerHTML = "";
+
+
+    if (
+        !Array.isArray(items) ||
+        !image ||
+        !image.width ||
+        !image.height
+    ) {
+        return;
+    }
+
+
+    items.forEach(item => {
+
+        const box =
+            item.boundingBox;
+
+
+        if (
+            !box ||
+            box.width <= 0 ||
+            box.height <= 0
+        ) {
+            return;
+        }
+
+
+        const element =
+            document.createElement(
+                "div"
+            );
+
+
+        element.className =
+            "detection-box";
+
+
+        element.style.left =
+            `${(box.x / image.width) * 100}%`;
+
+        element.style.top =
+            `${(box.y / image.height) * 100}%`;
+
+        element.style.width =
+            `${(box.width / image.width) * 100}%`;
+
+        element.style.height =
+            `${(box.height / image.height) * 100}%`;
+
+
+        element.dataset.label =
+            formatPiiType(
+                item.type
+            );
+
+
+        overlayLayer.appendChild(
+            element
+        );
+    });
+}
 
 previewImage.addEventListener(
     "load",

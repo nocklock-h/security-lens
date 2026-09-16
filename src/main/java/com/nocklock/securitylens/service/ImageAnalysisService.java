@@ -19,6 +19,8 @@ import com.nocklock.securitylens.analyzer.AiPiiAnalyzer;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.nocklock.securitylens.dto.OcrResult;
+
 @Service
 public class ImageAnalysisService {
 
@@ -34,12 +36,15 @@ public class ImageAnalysisService {
     private final PiiAnalyzer piiAnalyzer;
     private final RiskScoreCalculator riskScoreCalculator;
 
+    private final BoundingBoxResolver boundingBoxResolver;
+
     public ImageAnalysisService(
             ImageMetadataService imageMetadataService,
             OcrService ocrService,
             PiiAnalyzer piiAnalyzer,
             AiPiiAnalyzer aiPiiAnalyzer,
             RiskScoreCalculator riskScoreCalculator,
+            BoundingBoxResolver boundingBoxResolver,
             MessageSource messageSource
     ) {
         this.imageMetadataService = imageMetadataService;
@@ -47,6 +52,7 @@ public class ImageAnalysisService {
         this.piiAnalyzer = piiAnalyzer;
         this.aiPiiAnalyzer = aiPiiAnalyzer;
         this.riskScoreCalculator = riskScoreCalculator;
+        this.boundingBoxResolver = boundingBoxResolver;
         this.messageSource = messageSource;
     }
 
@@ -61,8 +67,16 @@ public class ImageAnalysisService {
         MetadataResult metadataResult =
                 imageMetadataService.extract(image);
 
+        OcrResult ocrResult =
+                ocrService.analyze(image);
+
         String extractedText =
-                ocrService.extractText(image);
+                ocrResult.text();
+
+        log.info(
+                "OCR word count={}",
+                ocrResult.words().size()
+        );
 
         String normalizedText =
                 normalizeOcrText(extractedText);
@@ -82,7 +96,7 @@ public class ImageAnalysisService {
                 )
         );
 
-        //시간층정
+        //시간측정
         long aiDurationMs =
                 (System.nanoTime() - aiStartTime) / 1_000_000;
 
@@ -90,6 +104,12 @@ public class ImageAnalysisService {
                 "AI PII analysis completed. durationMs={}",
                 aiDurationMs
         );
+
+        detectedItems =
+                boundingBoxResolver.attach(
+                        detectedItems,
+                        ocrResult.words()
+                );
 
         int riskScore =
                 riskScoreCalculator.calculate(

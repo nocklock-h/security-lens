@@ -773,8 +773,52 @@ button {
     position: absolute;
 
     pointer-events: none;
+
+    z-index: 2;
 }
 
+.detection-box {
+    position: absolute;
+
+    box-sizing: border-box;
+
+    border: 2px solid var(--danger);
+
+    border-radius: 5px;
+
+    background:
+            rgba(255, 77, 95, 0.10);
+
+    box-shadow:
+            0 0 0 1px rgba(255, 77, 95, 0.18),
+            0 0 16px rgba(255, 77, 95, 0.16);
+}
+
+
+.detection-box::before {
+    content: attr(data-label);
+
+    position: absolute;
+
+    left: -2px;
+    top: -23px;
+
+    padding: 4px 7px;
+
+    border-radius: 4px;
+
+    background: var(--danger);
+
+    color: #ffffff;
+
+    font-size: 9px;
+
+    font-weight: 800;
+
+    line-height: 1;
+
+    white-space: nowrap;
+}
 
 .image-footer {
     height: 52px;
