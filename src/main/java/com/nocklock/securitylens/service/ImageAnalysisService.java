@@ -1,60 +1,168 @@
 package com.nocklock.securitylens.service;
 
-import com.nocklock.securitylens.domain.InferenceLevel;
-import com.nocklock.securitylens.domain.PiiType;
+import com.nocklock.securitylens.analyzer.PiiAnalyzer;
 import com.nocklock.securitylens.domain.RiskLevel;
 import com.nocklock.securitylens.dto.AnalysisResponse;
-import com.nocklock.securitylens.dto.BoundingBox;
 import com.nocklock.securitylens.dto.DetectedItem;
 import com.nocklock.securitylens.dto.ImageInfo;
-import com.nocklock.securitylens.dto.InferenceResult;
 import com.nocklock.securitylens.dto.MetadataResult;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
-
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.IOException;
+import org.springframework.context.MessageSource;
+import org.springframework.context.i18n.LocaleContextHolder;
+import com.nocklock.securitylens.analyzer.AiPiiAnalyzer;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
 public class ImageAnalysisService {
 
-    private final ImageMetadataService imageMetadataService;
+    private static final Logger log =
+            LoggerFactory.getLogger(ImageAnalysisService.class);
 
-    public ImageAnalysisService(ImageMetadataService imageMetadataService) {
+    private final MessageSource messageSource;
+
+    private final AiPiiAnalyzer aiPiiAnalyzer;
+
+    private final ImageMetadataService imageMetadataService;
+    private final OcrService ocrService;
+    private final PiiAnalyzer piiAnalyzer;
+    private final RiskScoreCalculator riskScoreCalculator;
+
+    public ImageAnalysisService(
+            ImageMetadataService imageMetadataService,
+            OcrService ocrService,
+            PiiAnalyzer piiAnalyzer,
+            AiPiiAnalyzer aiPiiAnalyzer,
+            RiskScoreCalculator riskScoreCalculator,
+            MessageSource messageSource
+    ) {
         this.imageMetadataService = imageMetadataService;
+        this.ocrService = ocrService;
+        this.piiAnalyzer = piiAnalyzer;
+        this.aiPiiAnalyzer = aiPiiAnalyzer;
+        this.riskScoreCalculator = riskScoreCalculator;
+        this.messageSource = messageSource;
     }
 
     public AnalysisResponse analyze(MultipartFile image) {
-        MetadataResult metadataResult = imageMetadataService.extract(image);
+
+        //전체시간측정
+        long analysisStartTime = System.nanoTime();
+
+        ImageInfo imageInfo =
+                extractImageInfo(image);
+
+        MetadataResult metadataResult =
+                imageMetadataService.extract(image);
+
+        String extractedText =
+                ocrService.extractText(image);
+
+        List<DetectedItem> detectedItems =
+                new ArrayList<>(piiAnalyzer.analyze(extractedText));
+
+        //시간측정
+        long aiStartTime = System.nanoTime();
+
+
+        detectedItems.addAll(
+                aiPiiAnalyzer.analyze(
+                        extractedText,
+                        detectedItems.size() + 1
+                )
+        );
+
+        //시간층정
+        long aiDurationMs =
+                (System.nanoTime() - aiStartTime) / 1_000_000;
+
+        log.info(
+                "AI PII analysis completed. durationMs={}",
+                aiDurationMs
+        );
+
+        int riskScore =
+                riskScoreCalculator.calculate(
+                        detectedItems,
+                        metadataResult
+                );
+
+        RiskLevel riskLevel =
+                riskScoreCalculator.determineLevel(riskScore);
+
+        log.debug(
+                "OCR analysis completed. textLength={}",
+                extractedText.length()
+        );
+
+        long totalDurationMs =
+                (System.nanoTime() - analysisStartTime) / 1_000_000;
+
+        log.info(
+                "Image analysis completed. detectedCount={}, riskScore={}, riskLevel={}, durationMs={}",
+                detectedItems.size(),
+                riskScore,
+                riskLevel,
+                totalDurationMs
+        );
 
         return new AnalysisResponse(
-                82,
-                RiskLevel.CRITICAL,
-                new ImageInfo(1920, 1080),
-                List.of(
-                        new DetectedItem(
-                                "pii-1",
-                                PiiType.PHONE,
-                                "010-****-1234",
-                                0.98,
-                                new BoundingBox(0.10, 0.22, 0.25, 0.04)
-                        ),
-                        new DetectedItem(
-                                "pii-2",
-                                PiiType.ADDRESS,
-                                "서울특별시 서초구 ***",
-                                0.93,
-                                new BoundingBox(0.08, 0.34, 0.42, 0.05)
-                        )
-                ),
+                riskScore,
+                riskLevel,
+                imageInfo,
+                detectedItems,
                 metadataResult,
-                List.of(
-                        new InferenceResult(
-                                "RESIDENCE_LOCATION",
-                                InferenceLevel.HIGH,
-                                "주소와 위치정보가 함께 포함되어 있어 거주지역이 추정될 가능성이 높습니다."
-                        )
-                ),
-                "이 이미지는 개인정보 노출 위험이 높습니다."
+                List.of(),
+                createSummary(riskLevel)
         );
+    }
+
+    private String createSummary(RiskLevel riskLevel) {
+        String messageKey = switch (riskLevel) {
+            case LOW -> "analysis.summary.low";
+            case MEDIUM -> "analysis.summary.medium";
+            case HIGH -> "analysis.summary.high";
+            case CRITICAL -> "analysis.summary.critical";
+        };
+
+        return getMessage(messageKey);
+    }
+
+    private String getMessage(String messageKey) {
+        return messageSource.getMessage(
+                messageKey,
+                null,
+                LocaleContextHolder.getLocale()
+        );
+    }
+
+    private ImageInfo extractImageInfo(MultipartFile image) {
+        try {
+            BufferedImage bufferedImage =
+                    ImageIO.read(image.getInputStream());
+
+            if (bufferedImage == null) {
+                throw new IllegalArgumentException(
+                        getMessage("image.info.unavailable")
+                );
+            }
+
+            return new ImageInfo(
+                    bufferedImage.getWidth(),
+                    bufferedImage.getHeight()
+            );
+
+        } catch (IOException e) {
+            throw new IllegalStateException(
+                    getMessage("image.info.read-failed"),
+                    e
+            );
+        }
     }
 }
