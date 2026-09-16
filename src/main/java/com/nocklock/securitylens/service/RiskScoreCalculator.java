@@ -20,6 +20,8 @@ public class RiskScoreCalculator {
     private static final int ADDRESS_SCORE = 25;
     private static final int PERSON_NAME_SCORE = 10;
     private static final int RRN_SCORE = 75;
+    private static final int DRIVER_LICENSE_NUMBER_SCORE = 60;
+    private static final int SENSITIVE_DOCUMENT_SCORE = 50;
     private static final int ACCOUNT_NUMBER_SCORE = 50;
     private static final int LICENSE_PLATE_SCORE = 15;
     private static final int QR_CODE_SCORE = 10;
@@ -86,6 +88,23 @@ public class RiskScoreCalculator {
 
         if (detectedTypes.contains(PiiType.RRN)) {
             score += RRN_SCORE;
+        }
+
+        if (
+                detectedTypes.contains(
+                        PiiType.DRIVER_LICENSE_NUMBER
+                )
+        ) {
+            score += DRIVER_LICENSE_NUMBER_SCORE;
+        }
+
+
+        if (
+                detectedTypes.contains(
+                        PiiType.SENSITIVE_DOCUMENT
+                )
+        ) {
+            score += SENSITIVE_DOCUMENT_SCORE;
         }
 
         if (detectedTypes.contains(PiiType.ACCOUNT_NUMBER)) {

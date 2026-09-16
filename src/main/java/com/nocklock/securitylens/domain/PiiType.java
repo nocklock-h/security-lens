@@ -6,9 +6,12 @@ public enum PiiType {
     EMAIL,
     ADDRESS,
     PERSON_NAME,
-    RRN,
-    ACCOUNT_NUMBER,
 
+    RRN,
+    DRIVER_LICENSE_NUMBER,
+    SENSITIVE_DOCUMENT,
+
+    ACCOUNT_NUMBER,
     LICENSE_PLATE,
     QR_CODE,
     BARCODE

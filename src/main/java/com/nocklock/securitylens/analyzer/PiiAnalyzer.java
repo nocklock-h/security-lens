@@ -43,6 +43,46 @@ public class PiiAnalyzer {
     );
 
     /*
+     * 대한민국 주민등록번호
+     */
+    private static final Pattern RRN_PATTERN =
+            Pattern.compile(
+                    "(?<!\\d)\\d{6}-?[1-4]\\d{6}(?!\\d)"
+            );
+
+
+    /*
+     * 대한민국 운전면허번호
+     * NN-NN-NNNNNN-NN
+     */
+    private static final Pattern DRIVER_LICENSE_PATTERN =
+            Pattern.compile(
+                    "(?<!\\d)\\d{2}-\\d{2}-\\d{6}-\\d{2}(?!\\d)"
+            );
+
+
+    /*
+     * 운전면허증 문서 자체 탐지
+     */
+    private static final Pattern DRIVER_LICENSE_DOCUMENT_PATTERN =
+            Pattern.compile(
+                    "(driver\\s*['’]?s?\\s*license|운전\\s*면허)",
+                    Pattern.CASE_INSENSITIVE
+            );
+
+
+    /*
+     * 대한민국 도로명 주소 후보
+     * 예: 강남구 학동로97길
+     */
+    private static final Pattern KOREAN_ROAD_ADDRESS_PATTERN =
+            Pattern.compile(
+                    "([가-힣]{1,10}(?:시|군|구))"
+                            + "\\s+"
+                            + "([가-힣]{1,20}(?:로|길)\\d+(?:길)?)"
+            );
+
+    /*
      * 현재 OCR에서는 문자별 실제 confidence를 전달받지 않으므로
      * MVP에서는 탐지 방식에 따른 규칙 기반 confidence를 사용한다.
      */
@@ -56,9 +96,37 @@ public class PiiAnalyzer {
             return detectedItems;
         }
 
-        detectPhones(extractedText, detectedItems);
-        detectEmails(extractedText, detectedItems);
-        detectKoreanAddresses(extractedText, detectedItems);
+        detectRrn(extractedText, detectedItems);
+
+        detectDriverLicenseNumber(
+                extractedText,
+                detectedItems
+        );
+
+        detectSensitiveDocument(
+                extractedText,
+                detectedItems
+        );
+
+        detectPhones(
+                extractedText,
+                detectedItems
+        );
+
+        detectEmails(
+                extractedText,
+                detectedItems
+        );
+
+        detectKoreanAddresses(
+                extractedText,
+                detectedItems
+        );
+
+        detectKoreanRoadAddresses(
+                extractedText,
+                detectedItems
+        );
 
         return detectedItems;
     }
@@ -122,6 +190,111 @@ public class PiiAnalyzer {
                             + " "
                             + matcher.group(2)
                             + " ***";
+
+            detectedItems.add(
+                    createDetectedItem(
+                            PiiType.ADDRESS,
+                            maskedValue,
+                            ADDRESS_PATTERN_CONFIDENCE,
+                            detectedItems.size() + 1
+                    )
+            );
+        }
+    }
+
+    private void detectRrn(
+            String text,
+            List<DetectedItem> detectedItems
+    ) {
+
+        Matcher matcher =
+                RRN_PATTERN.matcher(text);
+
+        while (matcher.find()) {
+
+            detectedItems.add(
+                    createDetectedItem(
+                            PiiType.RRN,
+                            "******-*******",
+                            STRUCTURED_PATTERN_CONFIDENCE,
+                            detectedItems.size() + 1
+                    )
+            );
+        }
+    }
+
+
+    private void detectDriverLicenseNumber(
+            String text,
+            List<DetectedItem> detectedItems
+    ) {
+
+        Matcher matcher =
+                DRIVER_LICENSE_PATTERN.matcher(text);
+
+        while (matcher.find()) {
+
+            detectedItems.add(
+                    createDetectedItem(
+                            PiiType.DRIVER_LICENSE_NUMBER,
+                            "**-**-******-**",
+                            STRUCTURED_PATTERN_CONFIDENCE,
+                            detectedItems.size() + 1
+                    )
+            );
+        }
+    }
+
+
+    private void detectSensitiveDocument(
+            String text,
+            List<DetectedItem> detectedItems
+    ) {
+
+        Matcher matcher =
+                DRIVER_LICENSE_DOCUMENT_PATTERN.matcher(text);
+
+        if (matcher.find()) {
+
+            detectedItems.add(
+                    createDetectedItem(
+                            PiiType.SENSITIVE_DOCUMENT,
+                            "DRIVER_LICENSE",
+                            STRUCTURED_PATTERN_CONFIDENCE,
+                            detectedItems.size() + 1
+                    )
+            );
+        }
+    }
+
+
+    private void detectKoreanRoadAddresses(
+            String text,
+            List<DetectedItem> detectedItems
+    ) {
+
+        boolean alreadyDetectedAddress =
+                detectedItems.stream()
+                        .anyMatch(item ->
+                                item.type() == PiiType.ADDRESS
+                        );
+
+        if (alreadyDetectedAddress) {
+            return;
+        }
+
+
+        Matcher matcher =
+                KOREAN_ROAD_ADDRESS_PATTERN.matcher(text);
+
+
+        while (matcher.find()) {
+
+            String maskedValue =
+                    matcher.group(1)
+                            + " "
+                            + "***";
+
 
             detectedItems.add(
                     createDetectedItem(

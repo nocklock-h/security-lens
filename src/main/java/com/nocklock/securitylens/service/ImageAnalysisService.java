@@ -64,16 +64,20 @@ public class ImageAnalysisService {
         String extractedText =
                 ocrService.extractText(image);
 
+        String normalizedText =
+                normalizeOcrText(extractedText);
+
         List<DetectedItem> detectedItems =
-                new ArrayList<>(piiAnalyzer.analyze(extractedText));
+                new ArrayList<>(
+                        piiAnalyzer.analyze(normalizedText)
+                );
 
-        //시간측정
-        long aiStartTime = System.nanoTime();
-
+        long aiStartTime =
+                System.nanoTime();
 
         detectedItems.addAll(
                 aiPiiAnalyzer.analyze(
-                        extractedText,
+                        normalizedText,
                         detectedItems.size() + 1
                 )
         );
@@ -121,6 +125,40 @@ public class ImageAnalysisService {
                 List.of(),
                 createSummary(riskLevel)
         );
+    }
+
+    private String normalizeOcrText(String text) {
+
+        if (text == null || text.isBlank()) {
+            return "";
+        }
+
+        return text
+
+                // OCR에서 발생할 수 있는 다양한 dash를 일반 '-'로 통일
+                .replace('–', '-')
+                .replace('—', '-')
+
+                // 숫자 사이의 가로 공백 제거
+                // "1  1-09" -> "11-09"
+                .replaceAll(
+                        "(?<=\\d)[ \\t]+(?=\\d)",
+                        ""
+                )
+
+                // 하이픈 주변 가로 공백 제거
+                .replaceAll(
+                        "[ \\t]*-[ \\t]*",
+                        "-"
+                )
+
+                // 여러 개의 가로 공백 정리
+                .replaceAll(
+                        "[ \\t]{2,}",
+                        " "
+                )
+
+                .trim();
     }
 
     private String createSummary(RiskLevel riskLevel) {

@@ -43,6 +43,21 @@ public class UiMessageController {
             "ui.loading.ai",
             "ui.loading.risk",
 
+            "ui.pii.phone",
+            "ui.pii.email",
+            "ui.pii.personName",
+            "ui.pii.address",
+            "ui.pii.rrn",
+            "ui.pii.driverLicenseNumber",
+            "ui.pii.sensitiveDocument",
+            "ui.document.driverLicense",
+
+            "ui.risk.level.critical",
+            "ui.risk.level.high",
+            "ui.risk.level.medium",
+            "ui.risk.level.low",
+            "ui.risk.level.unknown",
+
             "ui.result.complete",
             "ui.result.title",
             "ui.result.description",

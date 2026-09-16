@@ -600,7 +600,43 @@ function renderRisk(data) {
 
 
     riskLevel.textContent =
-        level;
+        formatRiskLevel(level);
+
+    function formatRiskLevel(level) {
+
+        switch (level) {
+
+            case "CRITICAL":
+                return t(
+                    "ui.risk.level.critical",
+                    "Critical"
+                );
+
+            case "HIGH":
+                return t(
+                    "ui.risk.level.high",
+                    "High"
+                );
+
+            case "MEDIUM":
+                return t(
+                    "ui.risk.level.medium",
+                    "Medium"
+                );
+
+            case "LOW":
+                return t(
+                    "ui.risk.level.low",
+                    "Low"
+                );
+
+            default:
+                return t(
+                    "ui.risk.level.unknown",
+                    "Unknown"
+                );
+        }
+    }
 
 
     const riskConfig =
@@ -783,9 +819,7 @@ function renderVisibleExposure(items) {
 
 
         const value =
-            item.maskedValue ||
-            item.value ||
-            "Detected";
+            formatDetectedValue(item);
 
 
         element.innerHTML =
@@ -1505,18 +1539,90 @@ function formatFileSize(bytes) {
 function formatPiiType(type) {
 
     if (!type) {
-
         return "UNKNOWN";
     }
 
+    switch (String(type).toUpperCase()) {
 
-    return String(type)
-        .replaceAll(
-            "_",
-            " "
-        );
+        case "PHONE":
+        case "PHONE_NUMBER":
+            return t(
+                "ui.pii.phone",
+                "Phone Number"
+            );
+
+        case "EMAIL":
+            return t(
+                "ui.pii.email",
+                "Email"
+            );
+
+        case "PERSON_NAME":
+        case "NAME":
+            return t(
+                "ui.pii.personName",
+                "Person Name"
+            );
+
+        case "ADDRESS":
+            return t(
+                "ui.pii.address",
+                "Address"
+            );
+
+        case "RRN":
+            return t(
+                "ui.pii.rrn",
+                "Resident Registration Number"
+            );
+
+        case "DRIVER_LICENSE_NUMBER":
+            return t(
+                "ui.pii.driverLicenseNumber",
+                "Driver License Number"
+            );
+
+        case "SENSITIVE_DOCUMENT":
+            return t(
+                "ui.pii.sensitiveDocument",
+                "Sensitive Document"
+            );
+
+        default:
+            return String(type)
+                .replaceAll("_", " ");
+    }
 }
 
+function formatDetectedValue(item) {
+
+    if (!item) {
+        return "";
+    }
+
+    const type =
+        String(item.type || "")
+            .toUpperCase();
+
+
+    if (
+        type === "SENSITIVE_DOCUMENT" &&
+        item.maskedValue === "DRIVER_LICENSE"
+    ) {
+
+        return t(
+            "ui.document.driverLicense",
+            "Driver's License"
+        );
+    }
+
+
+    return (
+        item.maskedValue ||
+        item.value ||
+        "Detected"
+    );
+}
 
 function normalizeConfidence(value) {
 
