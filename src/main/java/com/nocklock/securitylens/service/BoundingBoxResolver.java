@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.regex.Pattern;
+import java.util.Collections;
 
 @Component
 public class BoundingBoxResolver {
@@ -38,10 +39,22 @@ public class BoundingBoxResolver {
                     "\\d{2}-\\d{2}-\\d{6}-\\d{2}"
             );
 
-
     public List<DetectedItem> attach(
             List<DetectedItem> detectedItems,
             List<OcrWord> words
+    ) {
+
+        return attach(
+                detectedItems,
+                words,
+                Collections.emptyMap()
+        );
+    }
+
+    public List<DetectedItem> attach(
+            List<DetectedItem> detectedItems,
+            List<OcrWord> words,
+            Map<String, List<Integer>> wordIdsById
     ) {
 
         Map<PiiType, Queue<BoundingBox>> boxes =
@@ -114,14 +127,52 @@ public class BoundingBoxResolver {
         for (DetectedItem item : detectedItems) {
 
             Queue<BoundingBox> candidates =
-                    boxes.get(item.type());
+                    boxes.get(
+                            item.type()
+                    );
 
 
             BoundingBox boundingBox =
-                    candidates == null
-                            ? null
-                            : candidates.poll();
+                    null;
 
+
+            /*
+             * AI가 실제 OCR 원문을 반환한 항목이라면
+             * 문자열 기반 Grounding을 가장 먼저 시도한다.
+             */
+            List<Integer> wordIds =
+                    wordIdsById.get(
+                            item.id()
+                    );
+
+
+            if (
+                    wordIds != null
+                            &&
+                            !wordIds.isEmpty()
+            ) {
+
+                boundingBox =
+                        findWordIdBox(
+                                wordIds,
+                                words
+                        );
+            }
+
+
+            /*
+             * 문자열 Grounding이 실패했거나
+             * Rule 기반 탐지 결과라면 기존 방식 fallback.
+             */
+            if (
+                    boundingBox == null
+                            &&
+                            candidates != null
+            ) {
+
+                boundingBox =
+                        candidates.poll();
+            }
 
             result.add(
                     new DetectedItem(
@@ -220,50 +271,290 @@ public class BoundingBoxResolver {
         List<BoundingBox> result =
                 new ArrayList<>();
 
-        List<OcrWord> line =
+
+        /*
+         * 먼저 OCR Word들을
+         * 시각적인 행 단위로 묶는다.
+         */
+        List<List<OcrWord>> lines =
+                new ArrayList<>();
+
+
+        List<OcrWord> currentLine =
                 new ArrayList<>();
 
 
         for (OcrWord word : words) {
 
             if (
-                    line.isEmpty() ||
-                            sameLine(
-                                    List.of(
-                                            line.get(
-                                                    line.size() - 1
-                                            ),
-                                            word
-                                    )
+                    currentLine.isEmpty()
+                            ||
+                            sameVisualLine(
+                                    currentLine.get(
+                                            currentLine.size() - 1
+                                    ),
+                                    word
                             )
             ) {
 
-                line.add(word);
+                currentLine.add(word);
 
             } else {
 
-                addAddressLineIfNeeded(
-                        line,
-                        result
+                lines.add(
+                        currentLine
                 );
 
-                line =
+
+                currentLine =
                         new ArrayList<>();
 
-                line.add(word);
+
+                currentLine.add(word);
             }
         }
 
 
-        addAddressLineIfNeeded(
-                line,
-                result
-        );
+        if (!currentLine.isEmpty()) {
+
+            lines.add(
+                    currentLine
+            );
+        }
+
+
+        /*
+         * 주소 시작 행을 찾는다.
+         */
+        for (
+                int i = 0;
+                i < lines.size();
+                i++
+        ) {
+
+            List<OcrWord> line =
+                    lines.get(i);
+
+
+            String text =
+                    joinWords(line);
+
+
+            if (!looksLikeAddressStart(text)) {
+                continue;
+            }
+
+
+            List<OcrWord> addressWords =
+                    new ArrayList<>(
+                            line
+                    );
+
+
+            /*
+             * 운전면허증 등의 주소는
+             * 다음 행에 번지/동/호 등이 이어질 수 있다.
+             *
+             * 바로 다음 최대 2개 행까지만 검사하여
+             * 무작정 아래 문서 전체를 합치지 않는다.
+             */
+            for (
+                    int offset = 1;
+                    offset <= 2;
+                    offset++
+            ) {
+
+                int nextIndex =
+                        i + offset;
+
+
+                if (nextIndex >= lines.size()) {
+                    break;
+                }
+
+
+                List<OcrWord> nextLine =
+                        lines.get(nextIndex);
+
+
+                if (
+                        !looksLikeAddressContinuation(
+                                nextLine
+                        )
+                ) {
+
+                    break;
+                }
+
+
+                addressWords.addAll(
+                        nextLine
+                );
+            }
+
+
+            result.add(
+                    union(
+                            addressWords
+                    )
+            );
+        }
 
 
         return result;
     }
 
+    private boolean looksLikeAddressStart(
+            String text
+    ) {
+
+        boolean hasRegion =
+                text.contains("시")
+                        ||
+                        text.contains("군")
+                        ||
+                        text.contains("구");
+
+
+        boolean hasAddressToken =
+                text.contains("로")
+                        ||
+                        text.contains("길")
+                        ||
+                        text.contains("동")
+                        ||
+                        text.contains("읍")
+                        ||
+                        text.contains("면");
+
+
+        return hasRegion
+                &&
+                hasAddressToken;
+    }
+
+
+    private boolean looksLikeAddressContinuation(
+            List<OcrWord> line
+    ) {
+
+        String text =
+                joinWords(line)
+                        .toLowerCase();
+
+
+        if (text.isBlank()) {
+            return false;
+        }
+
+
+        boolean koreanAddressToken =
+                text.contains("동")
+                        ||
+                        text.contains("호")
+                        ||
+                        text.contains("번지")
+                        ||
+                        text.contains("아파트")
+                        ||
+                        text.contains("빌라")
+                        ||
+                        text.contains("오피스텔");
+
+
+        boolean englishAddressToken =
+                text.contains("apt")
+                        ||
+                        text.contains("apartment")
+                        ||
+                        text.contains("unit")
+                        ||
+                        text.contains("suite");
+
+
+        return koreanAddressToken
+                ||
+                englishAddressToken;
+    }
+
+
+    private String joinWords(
+            List<OcrWord> words
+    ) {
+
+        return words.stream()
+                .map(OcrWord::text)
+                .reduce(
+                        "",
+                        String::concat
+                );
+    }
+
+    private boolean sameVisualLine(
+            OcrWord previous,
+            OcrWord current
+    ) {
+
+        int previousTop =
+                previous.y();
+
+        int previousBottom =
+                previous.y()
+                        + previous.height();
+
+
+        int currentTop =
+                current.y();
+
+        int currentBottom =
+                current.y()
+                        + current.height();
+
+
+        /*
+         * 두 OCR 단어가 세로 방향으로
+         * 실제 얼마나 겹치는지 계산한다.
+         */
+        int overlap =
+                Math.min(
+                        previousBottom,
+                        currentBottom
+                )
+                        -
+                        Math.max(
+                                previousTop,
+                                currentTop
+                        );
+
+
+        if (overlap <= 0) {
+            return false;
+        }
+
+
+        int minHeight =
+                Math.min(
+                        previous.height(),
+                        current.height()
+                );
+
+
+        if (minHeight <= 0) {
+            return false;
+        }
+
+
+        double overlapRatio =
+                overlap /
+                        (double) minHeight;
+
+
+        /*
+         * 높이의 절반 이상 겹치면
+         * 같은 텍스트 행으로 판단.
+         */
+        return overlapRatio >= 0.5;
+    }
 
     private void addAddressLineIfNeeded(
             List<OcrWord> line,
@@ -422,6 +713,327 @@ public class BoundingBoxResolver {
         return true;
     }
 
+    private BoundingBox findSourceTextBox(
+            String sourceText,
+            List<OcrWord> words,
+            boolean expandToFullLine
+    ) {
+
+        String target =
+                normalizeGroundingText(
+                        sourceText
+                );
+
+
+        if (target.isBlank()) {
+            return null;
+        }
+
+
+        /*
+         * 주소가 여러 줄일 수 있으므로
+         * 기존보다 넉넉하게 탐색한다.
+         */
+        final int maxWords =
+                24;
+
+
+        for (
+                int start = 0;
+                start < words.size();
+                start++
+        ) {
+
+            List<OcrWord> group =
+                    new ArrayList<>();
+
+            StringBuilder candidateBuilder =
+                    new StringBuilder();
+
+
+            for (
+                    int length = 1;
+                    length <= maxWords;
+                    length++
+            ) {
+
+                int index =
+                        start + length - 1;
+
+
+                if (index >= words.size()) {
+                    break;
+                }
+
+
+                OcrWord word =
+                        words.get(index);
+
+
+                group.add(word);
+
+                candidateBuilder.append(
+                        word.text()
+                );
+
+
+                String candidate =
+                        normalizeGroundingText(
+                                candidateBuilder.toString()
+                        );
+
+
+                if (candidate.isBlank()) {
+                    continue;
+                }
+
+
+                /*
+                 * OCR Word들을 순서대로 이어 붙인 결과가
+                 * AI가 지정한 sourceText와 일치하면,
+                 * 여러 줄에 걸쳐 있어도 전체를 union한다.
+                 */
+                if (
+                        candidate.equals(
+                                target
+                        )
+                ) {
+
+                    List<OcrWord> resolvedGroup =
+                            expandToFullLine
+                                    ? expandToVisualLine(
+                                    group,
+                                    words
+                            )
+                                    : group;
+
+
+                    return union(
+                            resolvedGroup
+                    );
+                }
+
+
+                /*
+                 * 아직 target의 시작 부분이면
+                 * 다음 OCR Word를 계속 붙여 본다.
+                 */
+                if (
+                        target.startsWith(
+                                candidate
+                        )
+                ) {
+
+                    continue;
+                }
+
+
+                /*
+                 * target보다 이미 지나치게 길어진 경우만
+                 * 현재 시작점 탐색을 종료한다.
+                 */
+                if (
+                        candidate.length()
+                                > target.length() + 8
+                ) {
+
+                    break;
+                }
+            }
+        }
+
+
+        return null;
+    }
+
+    private List<OcrWord> expandToVisualLine(
+            List<OcrWord> matchedGroup,
+            List<OcrWord> words
+    ) {
+
+        if (
+                matchedGroup == null
+                        ||
+                        matchedGroup.isEmpty()
+        ) {
+
+            return matchedGroup;
+        }
+
+
+        List<OcrWord> expanded =
+                new ArrayList<>();
+
+
+        for (OcrWord word : words) {
+
+            boolean sameRow =
+                    matchedGroup.stream()
+                            .anyMatch(
+                                    matchedWord ->
+                                            sameVisualLine(
+                                                    matchedWord,
+                                                    word
+                                            )
+                            );
+
+
+            if (sameRow) {
+
+                expanded.add(
+                        word
+                );
+            }
+        }
+
+
+        /*
+         * 혹시 확장에 실패하더라도
+         * 이미 Grounding에 성공한 원래 그룹은 유지한다.
+         */
+        if (expanded.isEmpty()) {
+            return matchedGroup;
+        }
+
+
+        return expanded;
+    }
+
+    private String normalizeGroundingText(
+            String text
+    ) {
+
+        if (text == null) {
+            return "";
+        }
+
+
+        return text
+                .toLowerCase()
+
+                /*
+                 * Grounding 비교에서는
+                 * 공백, 쉼표, 하이픈, 괄호 등의
+                 * OCR 분리 차이를 무시한다.
+                 *
+                 * Unicode 문자/숫자는 유지하므로
+                 * 한국어, 영어뿐 아니라 다른 언어 주소에도 대응 가능.
+                 */
+                .replaceAll(
+                        "[^\\p{L}\\p{N}]",
+                        ""
+                )
+
+                .trim();
+    }
+    private BoundingBox addSafetyPadding(
+            BoundingBox box,
+            PiiType type
+    ) {
+
+        double horizontalPadding =
+                switch (type) {
+
+                    case ADDRESS ->
+                            10.0;
+
+                    case PERSON_NAME ->
+                            8.0;
+
+                    default ->
+                            4.0;
+                };
+
+
+        double verticalPadding =
+                switch (type) {
+
+                    case ADDRESS ->
+                            6.0;
+
+                    case PERSON_NAME ->
+                            5.0;
+
+                    default ->
+                            3.0;
+                };
+
+
+        double x =
+                Math.max(
+                        0,
+                        box.x()
+                                - horizontalPadding
+                );
+
+
+        double y =
+                Math.max(
+                        0,
+                        box.y()
+                                - verticalPadding
+                );
+
+
+        return new BoundingBox(
+                x,
+                y,
+                box.width()
+                        + horizontalPadding * 2,
+                box.height()
+                        + verticalPadding * 2
+        );
+    }
+
+    private BoundingBox findWordIdBox(
+            List<Integer> wordIds,
+            List<OcrWord> words
+    ) {
+
+        List<OcrWord> selectedWords =
+                wordIds.stream()
+
+                        /*
+                         * AI가 같은 ID를 두 번 반환해도
+                         * 한 번만 사용한다.
+                         */
+                        .distinct()
+
+                        /*
+                         * OCR 원래 읽기 순서로 정렬한다.
+                         */
+                        .sorted()
+
+                        /*
+                         * Validator가 이미 검사하지만
+                         * Resolver에서도 한 번 더 방어한다.
+                         */
+                        .filter(
+                                wordId ->
+                                        wordId >= 0
+                                                &&
+                                                wordId < words.size()
+                        )
+
+                        /*
+                         * ID → 실제 OcrWord 변환.
+                         */
+                        .map(
+                                words::get
+                        )
+
+                        .toList();
+
+
+        if (selectedWords.isEmpty()) {
+            return null;
+        }
+
+
+        return union(
+                selectedWords
+        );
+    }
 
     private BoundingBox union(
             List<OcrWord> words

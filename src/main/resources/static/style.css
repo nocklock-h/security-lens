@@ -167,7 +167,7 @@ button {
 /* MAIN */
 
 .main-container {
-    width: min(1180px, calc(100% - 40px));
+    width: min(1200px, calc(100% - 40px));
 
     margin: 0 auto;
 
@@ -178,11 +178,12 @@ button {
 /* HERO */
 
 .hero {
+    max-width: 900px;
+    margin: 0 auto;
+
     text-align: center;
-
-    padding: 86px 0 52px;
+    padding: 92px 0 64px;
 }
-
 
 .hero-badge {
     display: inline-flex;
@@ -205,39 +206,44 @@ button {
     margin-bottom: 22px;
 }
 
-
-.hero h1 {
+.hero-title {
     margin: 0;
 
-    font-size: clamp(42px, 6vw, 70px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
 
-    line-height: 1.04;
+    gap: 8px;
 
+    font-size: clamp(42px, 4.5vw, 62px);
+    line-height: 1.08;
     letter-spacing: -3px;
+}
 
+.hero-title-primary {
+    display: block;
+
+    color: var(--text);
     font-weight: 750;
 }
 
+.hero-title-secondary {
+    display: block;
 
-.hero h1 span {
     color: var(--text-secondary);
-
     font-weight: 500;
 }
 
+.hero-description {
+    max-width: 800px;
 
-.hero p {
-    max-width: 620px;
-
-    margin: 24px auto 0;
+    margin: 28px auto 0;
 
     color: var(--text-secondary);
 
-    font-size: 16px;
-
-    line-height: 1.8;
+    font-size: 14px;
+    line-height: 1.7;
 }
-
 
 /* UPLOAD */
 
@@ -794,32 +800,6 @@ button {
             0 0 16px rgba(255, 77, 95, 0.16);
 }
 
-
-.detection-box::before {
-    content: attr(data-label);
-
-    position: absolute;
-
-    left: -2px;
-    top: -23px;
-
-    padding: 4px 7px;
-
-    border-radius: 4px;
-
-    background: var(--danger);
-
-    color: #ffffff;
-
-    font-size: 9px;
-
-    font-weight: 800;
-
-    line-height: 1;
-
-    white-space: nowrap;
-}
-
 .image-footer {
     height: 52px;
 
@@ -1331,12 +1311,8 @@ footer p {
         padding-top: 58px;
     }
 
-    .hero h1 {
+    .hero-title {
         letter-spacing: -2px;
-    }
-
-    .hero p br {
-        display: none;
     }
 
     .drop-zone {
@@ -1446,13 +1422,6 @@ input:focus-visible {
     font-weight: 700;
 
     color: var(--text);
-}
-
-
-.hero-description-ko {
-    font-size: 13px !important;
-
-    margin-top: 10px !important;
 }
 
 

@@ -20,6 +20,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.nocklock.securitylens.dto.OcrResult;
+import com.nocklock.securitylens.dto.AiPiiDetectionResult;
+import com.nocklock.securitylens.domain.PiiType;
 
 @Service
 public class ImageAnalysisService {
@@ -89,11 +91,42 @@ public class ImageAnalysisService {
         long aiStartTime =
                 System.nanoTime();
 
-        detectedItems.addAll(
+        AiPiiDetectionResult aiResult =
                 aiPiiAnalyzer.analyze(
                         normalizedText,
+                        ocrResult.words(),
                         detectedItems.size() + 1
-                )
+                );
+
+
+        boolean aiDetectedAddress =
+                aiResult.detectedItems()
+                        .stream()
+                        .anyMatch(
+                                item ->
+                                        item.type()
+                                                == PiiType.ADDRESS
+                        );
+
+
+        /*
+         * AI가 문맥 기반 주소를 찾았다면
+         * 기존 한국 주소 Regex 결과 대신 AI 주소를 사용.
+         *
+         * AI가 실패하면 기존 Regex 주소가 그대로 fallback.
+         */
+        if (aiDetectedAddress) {
+
+            detectedItems.removeIf(
+                    item ->
+                            item.type()
+                                    == PiiType.ADDRESS
+            );
+        }
+
+
+        detectedItems.addAll(
+                aiResult.detectedItems()
         );
 
         //시간측정
@@ -105,11 +138,19 @@ public class ImageAnalysisService {
                 aiDurationMs
         );
 
-        detectedItems =
-                boundingBoxResolver.attach(
-                        detectedItems,
-                        ocrResult.words()
-                );
+        boundingBoxResolver.attach(
+                detectedItems,
+                ocrResult.words(),
+                aiResult.wordIdsById()
+        );
+
+        detectedItems.forEach(item ->
+                log.debug(
+                        "Resolved bounding box. type={}, box={}",
+                        item.type(),
+                        item.boundingBox()
+                )
+        );
 
         int riskScore =
                 riskScoreCalculator.calculate(

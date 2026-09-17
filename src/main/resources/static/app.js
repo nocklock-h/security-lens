@@ -104,13 +104,32 @@ const visibleCount =
 const hiddenCount =
     document.getElementById("hiddenCount");
 
-
 const detectedItems =
     document.getElementById("detectedItems");
 
 const metadataItems =
     document.getElementById("metadataItems");
 
+const documentTypeCard =
+    document.getElementById("documentTypeCard");
+
+const documentTypeTitle =
+    document.getElementById("documentTypeTitle");
+
+const documentTypeHeading =
+    document.getElementById("documentTypeHeading");
+
+const documentTypeDescription =
+    document.getElementById("documentTypeDescription");
+
+const documentTypeLabel =
+    document.getElementById("documentTypeLabel");
+
+const documentTypeValue =
+    document.getElementById("documentTypeValue");
+
+const aiContext =
+    document.getElementById("aiContext");
 
 const aiSummary =
     document.getElementById("aiSummary");
@@ -546,18 +565,34 @@ async function analyzeImage() {
 
 function renderAnalysis(data) {
 
+    const items =
+        Array.isArray(data.detectedItems)
+            ? data.detectedItems
+            : [];
+
+
     renderRisk(
         data
     );
 
 
+    renderDocumentType(
+        items
+    );
+
+
     renderVisibleExposure(
-        data.detectedItems || []
+        items
     );
 
 
     renderMetadata(
         data.metadata
+    );
+
+
+    renderAiContext(
+        data
     );
 
 
@@ -570,7 +605,6 @@ function renderAnalysis(data) {
         data.image
     );
 }
-
 
 // ============================================================
 // RISK
@@ -765,6 +799,86 @@ function getRiskConfig(level) {
     }
 }
 
+// ============================================================
+// DOCUMENT CONTEXT
+// ============================================================
+
+function isDocumentType(item) {
+
+    return String(
+            item?.type || ""
+        ).toUpperCase() ===
+        "SENSITIVE_DOCUMENT";
+}
+
+
+function renderDocumentType(items) {
+
+    const documentItem =
+        items.find(
+            item =>
+                isDocumentType(item)
+        );
+
+
+    if (!documentItem) {
+
+        documentTypeCard.classList.add(
+            "hidden"
+        );
+
+        documentTypeValue.textContent =
+            "";
+
+        return;
+    }
+
+
+    /*
+        기존 i18n API에 새 키를 추가하지 않아도
+        한국어 / 영어가 자연스럽게 보이도록 처리.
+    */
+    const isKorean =
+        currentLanguage === "ko";
+
+
+    documentTypeTitle.textContent =
+        isKorean
+            ? "문서 유형"
+            : "Document Type";
+
+
+    documentTypeHeading.textContent =
+        isKorean
+            ? "문서 유형"
+            : "Document Type";
+
+
+    documentTypeDescription.textContent =
+        isKorean
+            ? "이미지 전체 맥락에서 인식된 문서입니다."
+            : "Document context recognized from the image.";
+
+
+    documentTypeLabel.textContent =
+        isKorean
+            ? "인식된 문서"
+            : "Recognized document";
+
+
+    /*
+        기존 함수가 DRIVER_LICENSE를 이미 처리한다.
+    */
+    documentTypeValue.textContent =
+        formatDetectedValue(
+            documentItem
+        );
+
+
+    documentTypeCard.classList.remove(
+        "hidden"
+    );
+}
 
 // ============================================================
 // VISIBLE EXPOSURE
@@ -776,11 +890,24 @@ function renderVisibleExposure(items) {
         "";
 
 
+    /*
+        SENSITIVE_DOCUMENT는 개인정보 자체가 아니라
+        이미지 전체에 대한 문서 분류 결과다.
+
+        따라서 Visible Exposure에서 제외한다.
+    */
+    const privacyItems =
+        items.filter(
+            item =>
+                !isDocumentType(item)
+        );
+
+
     visibleCount.textContent =
-        items.length;
+        privacyItems.length;
 
 
-    if (items.length === 0) {
+    if (privacyItems.length === 0) {
 
         detectedItems.innerHTML =
             `
@@ -799,7 +926,7 @@ function renderVisibleExposure(items) {
     }
 
 
-    items.forEach(item => {
+    privacyItems.forEach(item => {
 
         const element =
             document.createElement(
@@ -811,12 +938,6 @@ function renderVisibleExposure(items) {
             "detected-item";
 
 
-        const confidence =
-            normalizeConfidence(
-                item.confidence
-            );
-
-
         const type =
             formatPiiType(
                 item.type
@@ -824,7 +945,9 @@ function renderVisibleExposure(items) {
 
 
         const value =
-            formatDetectedValue(item);
+            formatDetectedValue(
+                item
+            );
 
 
         element.innerHTML =
@@ -840,16 +963,6 @@ function renderVisibleExposure(items) {
                     </div>
 
                 </div>
-
-                ${
-                confidence !== null
-                    ? `
-                            <div class="confidence">
-                                ${confidence}%
-                            </div>
-                        `
-                    : ""
-            }
             `;
 
 
@@ -1008,6 +1121,125 @@ function showNoMetadata() {
         `;
 }
 
+// ============================================================
+// AI CONTEXT
+// ============================================================
+
+function renderAiContext(data) {
+
+    const items =
+        Array.isArray(data.detectedItems)
+            ? data.detectedItems
+            : [];
+
+
+    const signals =
+        [];
+
+
+    /*
+        1. 문서 맥락
+    */
+    const documentItem =
+        items.find(
+            item =>
+                isDocumentType(item)
+        );
+
+
+    if (documentItem) {
+
+        signals.push(
+            formatDetectedValue(
+                documentItem
+            )
+        );
+    }
+
+
+    /*
+        2. 화면에서 탐지된 개인정보
+    */
+    items
+        .filter(
+            item =>
+                !isDocumentType(item)
+        )
+        .forEach(item => {
+
+            const label =
+                formatPiiType(
+                    item.type
+                );
+
+
+            if (
+                label &&
+                !signals.includes(label)
+            ) {
+
+                signals.push(
+                    label
+                );
+            }
+        });
+
+
+    /*
+        3. 숨겨진 메타데이터
+    */
+    const metadata =
+        data.metadata;
+
+
+    if (
+        metadata?.gps?.detected
+    ) {
+
+        signals.push(
+            currentLanguage === "ko"
+                ? "위치 메타데이터"
+                : "Location Metadata"
+        );
+    }
+
+
+    if (
+        metadata?.device?.detected
+    ) {
+
+        signals.push(
+            currentLanguage === "ko"
+                ? "기기 정보"
+                : "Device Information"
+        );
+    }
+
+
+    if (metadata?.capturedAt) {
+
+        signals.push(
+            currentLanguage === "ko"
+                ? "촬영 시간"
+                : "Capture Time"
+        );
+    }
+
+
+    if (signals.length === 0) {
+
+        aiContext.textContent =
+            currentLanguage === "ko"
+                ? "뚜렷한 개인정보 노출 신호가 발견되지 않았습니다."
+                : "No clear privacy exposure signals were detected.";
+
+        return;
+    }
+
+
+    aiContext.textContent =
+        signals.join(" · ");
+}
 
 // ============================================================
 // AI SUMMARY
@@ -1186,6 +1418,15 @@ function renderBoundingBoxes(
 
     items.forEach(item => {
 
+        /*
+            운전면허증 같은 문서 분류는
+            이미지 전체 맥락이므로 PII 박스로 표시하지 않는다.
+        */
+        if (isDocumentType(item)) {
+            return;
+        }
+
+
         const box =
             item.boundingBox;
 
@@ -1221,13 +1462,6 @@ function renderBoundingBoxes(
         element.style.height =
             `${(box.height / image.height) * 100}%`;
 
-
-        element.dataset.label =
-            formatPiiType(
-                item.type
-            );
-
-
         overlayLayer.appendChild(
             element
         );
@@ -1250,7 +1484,10 @@ window.addEventListener(
     () => {
 
         requestAnimationFrame(
-            syncOverlayToImage
+            () => {
+
+                syncOverlayToImage();
+            }
         );
     }
 );
@@ -1512,6 +1749,18 @@ function clearAnalysisResult() {
         "UNKNOWN";
 
 
+    documentTypeCard.classList.add(
+        "hidden"
+    );
+
+    documentTypeValue.textContent =
+        "";
+
+
+    aiContext.textContent =
+        "";
+
+
     aiSummary.textContent =
         "";
 
@@ -1682,10 +1931,15 @@ function formatDetectedValue(item) {
         item.maskedValue === "DRIVER_LICENSE"
     ) {
 
+    if (
+        type === "PERSON_NAME"
+    ) {
+
         return t(
-            "ui.document.driverLicense",
-            "Driver's License"
+            "ui.pii.detected.personName",
+            "Name detected"
         );
+    }
     }
 
 

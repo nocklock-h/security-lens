@@ -99,40 +99,38 @@
          HERO
          ============================== -->
 
-    <section
-            class="hero"
-            aria-labelledby="heroTitle"
-    >
+    <section class="hero">
 
-        <p
+        <div
                 class="hero-badge"
                 data-i18n="ui.hero.badge"
         >
             AI-POWERED PRIVACY PROTECTION
-        </p>
+        </div>
 
+        <h1 class="hero-title">
 
-        <h1 id="heroTitle">
+        <span
+                class="hero-title-primary"
+                data-i18n="ui.hero.title.first"
+        >
+        Share your photo.
+    </span>
 
             <span
-                    data-i18n="ui.hero.title.first"
-                    class="hero-title-main"
+                    class="hero-title-secondary"
+                    data-i18n="ui.hero.title.second"
             >
-                Share your photo.
-            </span>
-
-            <br>
-
-            <span data-i18n="ui.hero.title.second">
-                Not your privacy.
-            </span>
+        Protect your privacy.
+    </span>
 
         </h1>
 
-
-        <p data-i18n="ui.hero.description">
-            Detect visible personal information and hidden metadata
-            before sharing your photos.
+        <p
+                class="hero-description"
+                data-i18n="ui.hero.description"
+        >
+            Detect visible personal information and hidden metadata before you share.
         </p>
 
     </section>
@@ -152,14 +150,6 @@
                 id="dropZone"
                 class="drop-zone"
         >
-
-            <div
-                    class="upload-icon"
-                    aria-hidden="true"
-            >
-                +
-            </div>
-
 
             <h2
                     id="uploadTitle"
@@ -568,6 +558,77 @@
 
                 </article>
 
+                <!-- DOCUMENT CONTEXT -->
+
+                <article
+                        id="documentTypeCard"
+                        class="exposure-card hidden"
+                        aria-labelledby="documentTypeTitle"
+                >
+
+                    <h3
+                            id="documentTypeTitle"
+                            class="sr-only"
+                    >
+                        Document Type
+                    </h3>
+
+
+                    <div class="card-heading">
+
+                        <div aria-hidden="true">
+
+            <span
+                    class="card-icon hidden-icon"
+                    aria-hidden="true"
+            >
+                ◇
+            </span>
+
+                            <span id="documentTypeHeading">
+                Document Type
+            </span>
+
+                        </div>
+
+                    </div>
+
+
+                    <p
+                            id="documentTypeDescription"
+                            class="card-description"
+                    >
+                        Document context recognized from the image.
+                    </p>
+
+
+                    <div class="detected-list">
+
+                        <div class="detected-item">
+
+                            <div class="detected-item-left">
+
+                                <div
+                                        id="documentTypeLabel"
+                                        class="detected-item-type"
+                                >
+                                    Recognized document
+                                </div>
+
+                                <div
+                                        id="documentTypeValue"
+                                        class="detected-item-value"
+                                >
+                                    -
+                                </div>
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                </article>
 
                 <!-- VISIBLE EXPOSURE -->
 
@@ -731,6 +792,13 @@
                         </div>
 
                     </div>
+
+
+                    <p
+                            id="aiContext"
+                            class="card-description"
+                            aria-live="polite"
+                    ></p>
 
 
                     <p
