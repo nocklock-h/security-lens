@@ -14,6 +14,9 @@ let selectedFile = null;
 let previewUrl = null;
 let loadingInterval = null;
 
+let latestAnalysis = null;
+let protectedPreviewUrl = null;
+
 let messages = {};
 let currentLanguage = "en";
 
@@ -64,6 +67,20 @@ const newAnalysisButton =
 const retryButton =
     document.getElementById("retryButton");
 
+const protectButton =
+    document.getElementById("protectButton");
+
+
+const protectButtonLabel =
+    protectButton?.querySelector(
+        'span[data-i18n="ui.result.protect"]'
+    );
+
+
+const protectStatus =
+    protectButton?.querySelector(
+        "small"
+    );
 
 const previewImage =
     document.getElementById("previewImage");
@@ -187,7 +204,6 @@ async function initializeI18n() {
 
         const data =
             await response.json();
-
 
         messages =
             data.messages || {};
@@ -499,6 +515,59 @@ async function analyzeImage() {
         const data =
             await response.json();
 
+        latestAnalysis =
+            data;
+
+
+        const protectableItems =
+            Array.isArray(data.detectedItems)
+                ? data.detectedItems.filter(item => {
+
+                    if (isDocumentType(item)) {
+                        return false;
+                    }
+
+
+                    const box =
+                        item.boundingBox;
+
+
+                    return (
+                        box &&
+                        box.width > 0 &&
+                        box.height > 0
+                    );
+                })
+                : [];
+
+
+        const canProtect =
+            protectableItems.length > 0;
+
+
+        protectButton.disabled =
+            !canProtect;
+
+
+        protectButton.setAttribute(
+            "aria-disabled",
+            String(!canProtect)
+        );
+
+
+        if (protectStatus) {
+
+            protectStatus.textContent =
+                canProtect
+                    ? t(
+                        "ui.result.readyToProtect",
+                        "Ready"
+                    )
+                    : t(
+                        "ui.result.nothingToProtect",
+                        "No protectable area"
+                    );
+        }
 
         console.log(
             "Security Lens Analysis Result:",
@@ -950,20 +1019,58 @@ function renderVisibleExposure(items) {
             );
 
 
+        const box =
+            item.boundingBox;
+
+
+        const protectable =
+            Boolean(
+                box &&
+                box.width > 0 &&
+                box.height > 0
+            );
+
+
+        const itemId =
+            String(
+                item.id || ""
+            );
+
+
         element.innerHTML =
             `
-                <div class="detected-item-left">
+        <div class="detected-item-left">
 
-                    <div class="detected-item-type">
-                        ${escapeHtml(type)}
-                    </div>
+            <div class="detected-item-type">
+                ${escapeHtml(type)}
+            </div>
 
-                    <div class="detected-item-value">
-                        ${escapeHtml(value)}
-                    </div>
+            <div class="detected-item-value">
+                ${escapeHtml(value)}
+            </div>
 
-                </div>
-            `;
+        </div>
+
+        <label class="protect-choice">
+
+            <input
+                type="checkbox"
+                class="protect-item-checkbox"
+                data-item-id="${escapeHtml(itemId)}"
+                ${protectable ? "checked" : "disabled"}
+            >
+
+            <span>
+                ${escapeHtml(
+                t(
+                    "ui.result.protectThis",
+                    "Protect"
+                )
+            )}
+            </span>
+
+        </label>
+    `;
 
 
         detectedItems.appendChild(
@@ -1492,6 +1599,397 @@ window.addEventListener(
     }
 );
 
+// ============================================================
+// IMAGE PROTECTION
+// ============================================================
+
+protectButton.addEventListener(
+    "click",
+    protectImage
+);
+
+
+function protectImage() {
+
+    /*
+        이미 보호 이미지가 만들어졌다면
+        두 번째 클릭은 다운로드로 사용한다.
+    */
+    if (protectedPreviewUrl) {
+
+        downloadProtectedImage();
+
+        return;
+    }
+
+
+    if (
+        !latestAnalysis ||
+        !previewImage.naturalWidth ||
+        !previewImage.naturalHeight
+    ) {
+
+        return;
+    }
+
+
+    const items =
+        Array.isArray(
+            latestAnalysis.detectedItems
+        )
+            ? latestAnalysis.detectedItems
+            : [];
+
+    const selectedItemIds =
+        new Set(
+            Array.from(
+                document.querySelectorAll(
+                    ".protect-item-checkbox:checked"
+                )
+            )
+                .map(
+                    checkbox =>
+                        checkbox.dataset.itemId
+                )
+                .filter(Boolean)
+        );
+
+
+    if (selectedItemIds.size === 0) {
+
+        alert(
+            t(
+                "ui.result.selectProtection",
+                "Select at least one item to protect."
+            )
+        );
+
+        return;
+    }
+
+    const width =
+        previewImage.naturalWidth;
+
+
+    const height =
+        previewImage.naturalHeight;
+
+
+    const canvas =
+        document.createElement(
+            "canvas"
+        );
+
+
+    canvas.width =
+        width;
+
+
+    canvas.height =
+        height;
+
+
+    const context =
+        canvas.getContext(
+            "2d"
+        );
+
+
+    if (!context) {
+        return;
+    }
+
+
+    /*
+        원본 이미지를 Canvas에 그대로 복사한다.
+    */
+    context.drawImage(
+        previewImage,
+        0,
+        0,
+        width,
+        height
+    );
+
+
+    /*
+        실제 이미지 크기에 따라
+        적당한 보호 여백을 계산한다.
+    */
+    const protectionPadding =
+        Math.max(
+            3,
+            Math.min(
+                8,
+                Math.round(
+                    Math.min(
+                        width,
+                        height
+                    ) * 0.003
+                )
+            )
+        );
+
+
+    items.forEach(item => {
+
+        /*
+            문서 유형 자체는 PII가 아니므로
+            전체 면허증을 가리지 않는다.
+        */
+        if (isDocumentType(item)) {
+            return;
+        }
+
+        if (
+            !selectedItemIds.has(
+                String(item.id)
+            )
+        ) {
+
+            return;
+        }
+
+        const box =
+            item.boundingBox;
+
+
+        if (
+            !box ||
+            box.width <= 0 ||
+            box.height <= 0
+        ) {
+
+            return;
+        }
+
+
+        /*
+            실제 보호에서는 분석 Box보다
+            조금 더 넓게 가린다.
+
+            이유:
+            문자 가장자리가 남는 것을 방지하기 위해서다.
+        */
+        const x =
+            Math.max(
+                0,
+                box.x -
+                protectionPadding
+            );
+
+
+        const y =
+            Math.max(
+                0,
+                box.y -
+                protectionPadding
+            );
+
+
+        const maskWidth =
+            Math.min(
+                width - x,
+                box.width +
+                protectionPadding * 2
+            );
+
+
+        const maskHeight =
+            Math.min(
+                height - y,
+                box.height +
+                protectionPadding * 2
+            );
+
+
+        /*
+            MVP에서는 Blur보다
+            완전 불투명 Masking을 사용한다.
+
+            개인정보 보호 측면에서
+            약한 Blur보다 안전하다.
+        */
+        context.fillStyle =
+            "#0b0f14";
+
+
+        const radius =
+            Math.min(
+                6,
+                maskHeight / 4
+            );
+
+
+        context.beginPath();
+
+
+        if (
+            typeof context.roundRect ===
+            "function"
+        ) {
+
+            context.roundRect(
+                x,
+                y,
+                maskWidth,
+                maskHeight,
+                radius
+            );
+
+            context.fill();
+
+        } else {
+
+            /*
+               오래된 Browser fallback
+           */
+            context.fillRect(
+                x,
+                y,
+                maskWidth,
+                maskHeight
+            );
+        }
+
+    });
+
+    /*
+        JPEG/PNG를 Canvas에서 다시 생성하면
+        기존 EXIF 메타데이터도 포함되지 않는다.
+
+        즉:
+        화면 PII Masking +
+        숨겨진 Metadata 제거
+        를 동시에 수행하게 된다.
+    */
+    const outputType =
+        selectedFile?.type === "image/png"
+            ? "image/png"
+            : "image/jpeg";
+
+
+    canvas.toBlob(
+        blob => {
+
+            if (!blob) {
+                return;
+            }
+
+
+            if (protectedPreviewUrl) {
+
+                URL.revokeObjectURL(
+                    protectedPreviewUrl
+                );
+            }
+
+
+            protectedPreviewUrl =
+                URL.createObjectURL(
+                    blob
+                );
+
+            protectButton.disabled =
+                false;
+
+
+            protectButton.setAttribute(
+                "aria-disabled",
+                "false"
+            );
+
+            previewImage.src =
+                protectedPreviewUrl;
+
+
+            previewImage.alt =
+                t(
+                    "ui.protect.previewAlt",
+                    "Protected privacy-safe image"
+                );
+
+
+            /*
+                보호 결과에서는
+                빨간 탐지 Box가 더 이상 필요 없다.
+            */
+            overlayLayer.innerHTML =
+                "";
+
+
+            if (protectButtonLabel) {
+
+                protectButtonLabel.textContent =
+                    t(
+                        "ui.result.downloadProtected",
+                        "Download protected image"
+                    );
+            }
+
+
+            if (protectStatus) {
+
+                protectStatus.textContent =
+                    t(
+                        "ui.result.protected",
+                        "Protected"
+                    );
+            }
+
+        },
+        outputType,
+        0.94
+    );
+}
+
+function downloadProtectedImage() {
+
+    if (!protectedPreviewUrl) {
+        return;
+    }
+
+
+    const extension =
+        selectedFile?.type === "image/png"
+            ? "png"
+            : "jpg";
+
+
+    const originalName =
+        selectedFile?.name
+            ?.replace(
+                /\.[^.]+$/,
+                ""
+            )
+        ||
+        "security-lens";
+
+
+    const link =
+        document.createElement(
+            "a"
+        );
+
+
+    link.href =
+        protectedPreviewUrl;
+
+
+    link.download =
+        `${originalName}-protected.${extension}`;
+
+
+    document.body.appendChild(
+        link
+    );
+
+
+    link.click();
+
+
+    link.remove();
+}
 
 // ============================================================
 // LOADING
@@ -1666,6 +2164,22 @@ function resetApplication() {
     stopLoadingAnimation();
 
 
+    latestAnalysis =
+        null;
+
+
+    if (protectedPreviewUrl) {
+
+        URL.revokeObjectURL(
+            protectedPreviewUrl
+        );
+
+
+        protectedPreviewUrl =
+            null;
+    }
+
+
     selectedFile =
         null;
 
@@ -1777,6 +2291,35 @@ function clearAnalysisResult() {
         "aria-valuenow",
         "0"
     );
+
+    protectButton.disabled =
+        true;
+
+
+    protectButton.setAttribute(
+        "aria-disabled",
+        "true"
+    );
+
+
+    if (protectButtonLabel) {
+
+        protectButtonLabel.textContent =
+            t(
+                "ui.result.protect",
+                "Protect Image"
+            );
+    }
+
+
+    if (protectStatus) {
+
+        protectStatus.textContent =
+            t(
+                "ui.result.readyToProtect",
+                "Ready after analysis"
+            );
+    }
 }
 
 
@@ -1921,6 +2464,7 @@ function formatDetectedValue(item) {
         return "";
     }
 
+
     const type =
         String(item.type || "")
             .toUpperCase();
@@ -1931,6 +2475,13 @@ function formatDetectedValue(item) {
         item.maskedValue === "DRIVER_LICENSE"
     ) {
 
+        return t(
+            "ui.document.driverLicense",
+            "Driver's License"
+        );
+    }
+
+
     if (
         type === "PERSON_NAME"
     ) {
@@ -1939,7 +2490,6 @@ function formatDetectedValue(item) {
             "ui.pii.detected.personName",
             "Name detected"
         );
-    }
     }
 
 

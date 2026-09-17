@@ -39,6 +39,11 @@ public class BoundingBoxResolver {
                     "\\d{2}-\\d{2}-\\d{6}-\\d{2}"
             );
 
+    private static final Pattern DATE_LIKE_PATTERN =
+            Pattern.compile(
+                    ".*\\d{4}[./-]\\d{1,2}[./-]\\d{1,2}.*"
+            );
+
     public List<DetectedItem> attach(
             List<DetectedItem> detectedItems,
             List<OcrWord> words
@@ -226,7 +231,7 @@ public class BoundingBoxResolver {
                         );
 
 
-                if (!sameLine(group)) {
+                if (!sameVisualLine(group)) {
                     break;
                 }
 
@@ -377,18 +382,51 @@ public class BoundingBoxResolver {
                         lines.get(nextIndex);
 
 
-                if (
-                        !looksLikeAddressContinuation(
+                List<OcrWord> previousLine =
+                        offset == 1
+                                ? line
+                                : lines.get(
+                                nextIndex - 1
+                        );
+
+
+                boolean semanticContinuation =
+                        looksLikeAddressContinuation(
                                 nextLine
-                        )
+                        );
+
+
+                boolean spatialContinuation =
+                        isSpatialAddressContinuation(
+                                previousLine,
+                                nextLine
+                        );
+
+
+                if (
+                        !semanticContinuation
+                                &&
+                                !spatialContinuation
                 ) {
 
                     break;
                 }
 
 
+                List<OcrWord> continuationWords =
+                        filterAddressColumnWords(
+                                line,
+                                nextLine
+                        );
+
+
+                if (continuationWords.isEmpty()) {
+                    break;
+                }
+
+
                 addressWords.addAll(
-                        nextLine
+                        continuationWords
                 );
             }
 
@@ -402,6 +440,146 @@ public class BoundingBoxResolver {
 
 
         return result;
+    }
+
+    private boolean isSpatialAddressContinuation(
+            List<OcrWord> previousLine,
+            List<OcrWord> nextLine
+    ) {
+
+        if (
+                previousLine == null
+                        ||
+                        previousLine.isEmpty()
+                        ||
+                        nextLine == null
+                        ||
+                        nextLine.isEmpty()
+        ) {
+
+            return false;
+        }
+
+
+        String nextText =
+                joinWords(
+                        nextLine
+                );
+
+
+        /*
+         * 바로 아래에 날짜 행이 있다면
+         * 주소 영역으로 확장하지 않는다.
+         */
+        if (
+                DATE_LIKE_PATTERN
+                        .matcher(nextText)
+                        .matches()
+        ) {
+
+            return false;
+        }
+
+
+        BoundingBox previousBox =
+                union(
+                        previousLine
+                );
+
+
+        BoundingBox nextBox =
+                union(
+                        nextLine
+                );
+
+
+        double previousBottom =
+                previousBox.y()
+                        +
+                        previousBox.height();
+
+
+        double verticalGap =
+                nextBox.y()
+                        -
+                        previousBottom;
+
+
+        double referenceHeight =
+                Math.max(
+                        previousBox.height(),
+                        nextBox.height()
+                );
+
+
+        /*
+         * 너무 멀리 떨어진 행은
+         * 같은 주소 블록이 아니다.
+         */
+        if (
+                verticalGap < -referenceHeight * 0.30
+                        ||
+                        verticalGap > referenceHeight * 1.50
+        ) {
+
+            return false;
+        }
+
+
+        double leftDifference =
+                Math.abs(
+                        previousBox.x()
+                                -
+                                nextBox.x()
+                );
+
+
+        boolean similarLeftEdge =
+                leftDifference
+                        <=
+                        Math.max(
+                                40.0,
+                                referenceHeight * 2.0
+                        );
+
+
+        double horizontalOverlap =
+                Math.min(
+                        previousBox.x()
+                                +
+                                previousBox.width(),
+                        nextBox.x()
+                                +
+                                nextBox.width()
+                )
+                        -
+                        Math.max(
+                                previousBox.x(),
+                                nextBox.x()
+                        );
+
+
+        double smallerWidth =
+                Math.min(
+                        previousBox.width(),
+                        nextBox.width()
+                );
+
+
+        boolean enoughOverlap =
+                smallerWidth > 0
+                        &&
+                        horizontalOverlap > 0
+                        &&
+                        horizontalOverlap
+                                /
+                                smallerWidth
+                                >= 0.25;
+
+
+        return similarLeftEdge
+                ||
+                enoughOverlap;
     }
 
     private boolean looksLikeAddressStart(
@@ -477,6 +655,100 @@ public class BoundingBoxResolver {
                 englishAddressToken;
     }
 
+    private List<OcrWord> filterAddressColumnWords(
+            List<OcrWord> anchorLine,
+            List<OcrWord> candidateLine
+    ) {
+
+        if (
+                anchorLine == null
+                        ||
+                        anchorLine.isEmpty()
+                        ||
+                        candidateLine == null
+                        ||
+                        candidateLine.isEmpty()
+        ) {
+
+            return List.of();
+        }
+
+
+        BoundingBox anchorBox =
+                union(
+                        anchorLine
+                );
+
+
+        double anchorLeft =
+                anchorBox.x();
+
+
+        double anchorRight =
+                anchorBox.x()
+                        +
+                        anchorBox.width();
+
+
+        /*
+         * OCR 행이 조금 들여쓰기되거나
+         * 괄호로 시작하는 경우까지 허용하기 위한 여유값.
+         *
+         * 고정 픽셀만 쓰지 않고
+         * 실제 텍스트 높이에 따라 같이 증가시킨다.
+         */
+        double tolerance =
+                Math.max(
+                        30.0,
+                        anchorBox.height() * 2.0
+                );
+
+
+        return candidateLine.stream()
+
+                .filter(
+                        word -> {
+
+                            double wordCenterX =
+                                    word.x()
+                                            +
+                                            word.width() / 2.0;
+
+
+                            double wordRight =
+                                    word.x()
+                                            +
+                                            word.width();
+
+
+                            /*
+                             * 주소 시작점보다 지나치게 왼쪽에 있는
+                             * 얼굴/사진 주변 OCR noise는 제거.
+                             */
+                            boolean notTooFarLeft =
+                                    wordRight
+                                            >=
+                                            anchorLeft - tolerance;
+
+
+                            /*
+                             * 주소 영역보다 지나치게 오른쪽에 있는
+                             * 다른 필드도 제거.
+                             */
+                            boolean notTooFarRight =
+                                    wordCenterX
+                                            <=
+                                            anchorRight + tolerance;
+
+
+                            return notTooFarLeft
+                                    &&
+                                    notTooFarRight;
+                        }
+                )
+
+                .toList();
+    }
 
     private String joinWords(
             List<OcrWord> words
@@ -556,6 +828,51 @@ public class BoundingBoxResolver {
         return overlapRatio >= 0.5;
     }
 
+    private boolean sameVisualLine(
+            List<OcrWord> words
+    ) {
+
+        if (
+                words == null
+                        ||
+                        words.size() <= 1
+        ) {
+
+            return true;
+        }
+
+
+        for (
+                int i = 1;
+                i < words.size();
+                i++
+        ) {
+
+            OcrWord previous =
+                    words.get(
+                            i - 1
+                    );
+
+
+            OcrWord current =
+                    words.get(i);
+
+
+            if (
+                    !sameVisualLine(
+                            previous,
+                            current
+                    )
+            ) {
+
+                return false;
+            }
+        }
+
+
+        return true;
+    }
+
     private void addAddressLineIfNeeded(
             List<OcrWord> line,
             List<BoundingBox> result
@@ -631,10 +948,9 @@ public class BoundingBoxResolver {
                         );
 
 
-                if (!sameLine(group)) {
+                if (!sameVisualLine(group)) {
                     break;
                 }
-
 
                 String text =
                         group.stream()

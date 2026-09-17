@@ -105,13 +105,17 @@ public class AiPiiAnalyzer {
                     );
 
             log.info(
-                    "AI PII validated. count={}, types={}, wordIds={}",
-                    validatedItems.size(),
+                    "AI PII validated. items={}",
                     validatedItems.stream()
-                            .map(AiDetectedItem::type)
-                            .toList(),
-                    validatedItems.stream()
-                            .map(AiDetectedItem::wordIds)
+                            .map(
+                                    item ->
+                                            item.type()
+                                                    + "(confidence="
+                                                    + item.confidence()
+                                                    + ", wordIds="
+                                                    + item.wordIds()
+                                                    + ")"
+                            )
                             .toList()
             );
 

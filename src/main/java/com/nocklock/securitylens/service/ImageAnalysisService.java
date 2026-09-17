@@ -138,11 +138,12 @@ public class ImageAnalysisService {
                 aiDurationMs
         );
 
-        boundingBoxResolver.attach(
-                detectedItems,
-                ocrResult.words(),
-                aiResult.wordIdsById()
-        );
+        detectedItems =
+                boundingBoxResolver.attach(
+                        detectedItems,
+                        ocrResult.words(),
+                        aiResult.wordIdsById()
+                );
 
         detectedItems.forEach(item ->
                 log.debug(

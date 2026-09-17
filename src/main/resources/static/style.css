@@ -788,18 +788,15 @@ button {
 
     box-sizing: border-box;
 
-    border: 2px solid var(--danger);
+    border: 1px solid rgba(255, 77, 95, 0.88);
 
     border-radius: 5px;
 
-    background:
-            rgba(255, 77, 95, 0.10);
+    background: rgba(255, 77, 95, 0.055);
 
     box-shadow:
-            0 0 0 1px rgba(255, 77, 95, 0.18),
-            0 0 16px rgba(255, 77, 95, 0.16);
+            0 0 0 1px rgba(255, 77, 95, 0.08);
 }
-
 .image-footer {
     height: 52px;
 
@@ -1074,6 +1071,41 @@ button {
     white-space: nowrap;
 }
 
+.protect-choice {
+    flex-shrink: 0;
+
+    display: inline-flex;
+    align-items: center;
+
+    gap: 7px;
+
+    margin-left: 14px;
+
+    color: var(--text-secondary);
+
+    font-size: 10px;
+
+    cursor: pointer;
+}
+
+
+.protect-item-checkbox {
+    width: 16px;
+    height: 16px;
+
+    margin: 0;
+
+    accent-color: var(--accent);
+
+    cursor: pointer;
+}
+
+
+.protect-item-checkbox:disabled {
+    cursor: not-allowed;
+
+    opacity: 0.45;
+}
 
 .confidence {
     color: var(--text-muted);
@@ -1171,27 +1203,51 @@ button {
 
 
 /* PROTECT */
-
 .protect-button {
     width: 100%;
 
     border: 1px solid var(--border);
-
     border-radius: 14px;
 
     padding: 17px;
 
     background: rgba(255, 255, 255, 0.025);
-
-    color: #657184;
+    color: var(--text-secondary);
 
     font-weight: 700;
 
-    cursor: not-allowed;
+    cursor: pointer;
 
     position: relative;
+
+    transition:
+            border-color 0.2s ease,
+            background 0.2s ease,
+            color 0.2s ease,
+            transform 0.2s ease;
 }
 
+
+.protect-button:not(:disabled):hover {
+    border-color: rgba(110, 231, 199, 0.45);
+
+    background: rgba(110, 231, 199, 0.055);
+
+    color: var(--text);
+
+    transform: translateY(-1px);
+}
+
+
+.protect-button:disabled {
+    cursor: not-allowed;
+
+    opacity: 0.48;
+}
+
+.protect-button:not(:disabled) {
+    cursor: pointer;
+}
 
 .protect-button small {
     margin-left: 8px;
