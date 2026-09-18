@@ -211,6 +211,16 @@ public class DocumentVisionAnalyzer {
                             VisionResponse.class
                     );
 
+            if (vision.fields() != null) {
+                vision.fields().forEach(field ->
+                        log.info(
+                                "RAW document field. type={}, confidence={}, box={}",
+                                field.type(),
+                                field.confidence(),
+                                field.boundingBox()
+                        )
+                );
+            }
 
             if (
                     !vision.detected()
@@ -326,12 +336,18 @@ public class DocumentVisionAnalyzer {
                특히 가장 왼쪽 첫 글자가 boundingBox 밖으로 잘리지 않도록 한다.
                단, 주변 라벨이나 사진 영역 또는 다른 개인정보 필드는 포함하지 않는다.
                운전면허증(DRIVER_LICENSE)을 분석할 때는 각 필드를 서로 혼동하지 않는다.
-                
                대한민국 운전면허증의 경우 일반적으로 다음과 같은 상대적 배치를 가진다.
             
                - DRIVER_LICENSE_NUMBER:
                  문서 상단의 긴 식별번호 영역이다.
                  PERSON_NAME보다 위에 있으며 짧은 이름 영역으로 지정하지 않는다.
+                 특히 DRIVER_LICENSE의 PERSON_NAME은
+                 이름 문자열의 실제 글자를 읽거나 식별할 필요가 없다.
+                 텍스트 자체를 완전히 판독할 수 없더라도
+                 문서 구조, 라벨, 위치 및 주변 필드 관계를 기준으로
+                 해당 영역이 운전면허증 소지자의 이름 영역임을
+                 합리적으로 확인할 수 있다면 PERSON_NAME으로 반환한다.
+                 PERSON_NAME의 실제 문자열 값은 추출하거나 반환하지 않는다.
             
                - PERSON_NAME:
                  운전면허번호 아래에 위치하는 비교적 짧은 이름 문자열 영역이다.
@@ -364,7 +380,9 @@ public class DocumentVisionAnalyzer {
 
             7. 주소가 여러 줄이면 주소 전체가 포함되는 하나의 boundingBox를 반환한다.
 
-            8. 확실하지 않은 필드는 반환하지 않는다.
+            8. 존재 여부와 위치를 합리적으로 판단할 수 없는 필드는 반환하지 않는다.
+            개인정보의 실제 문자열을 완전히 판독할 수 없다는 이유만으로
+            명확한 개인정보 필드 영역을 제외하지 않는다.
 
             9. 모든 좌표는 이미지 전체를 기준으로
                0부터 1000 사이의 정규화 좌표를 사용한다.

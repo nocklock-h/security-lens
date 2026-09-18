@@ -357,6 +357,7 @@
             <div>
 
                 <div
+                        id="analysisResultStatus"
                         class="section-eyebrow"
                         data-i18n="ui.result.complete"
                 >
@@ -471,8 +472,10 @@
                             aria-hidden="true"
                     ></span>
 
-
-                    <span data-i18n="ui.result.scanComplete">
+                    <span
+                            id="imageScanStatus"
+                            data-i18n="ui.result.scanComplete"
+                    >
                         Image scan completed
                     </span>
 
@@ -834,6 +837,13 @@
                     </small>
 
                 </button>
+
+                <p
+                        class="card-description protect-description"
+                        data-i18n="ui.result.protectDescription"
+                >
+                    Protects selected personal information and removes embedded EXIF metadata.
+                </p>
 
             </div>
 

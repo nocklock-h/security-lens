@@ -164,6 +164,16 @@ const imageResolution =
 const errorMessage =
     document.getElementById("errorMessage");
 
+const analysisResultStatus =
+    document.getElementById(
+        "analysisResultStatus"
+    );
+
+const imageScanStatus =
+    document.getElementById(
+        "imageScanStatus"
+    );
+
 
 // ============================================================
 // I18N
@@ -435,15 +445,6 @@ function selectFile(file) {
     previewImage.src =
         previewUrl;
 
-
-    previewUrl =
-        URL.createObjectURL(file);
-
-
-    previewImage.src =
-        previewUrl;
-
-
     const previewAlt =
         t(
             "ui.preview.imageAlt",
@@ -573,6 +574,8 @@ async function analyzeImage() {
         );
 
 
+        showDeepAnalysisStatus();
+
         showDeepAnalysisPending();
 
 
@@ -634,6 +637,13 @@ async function runDeepAnalysis(
         }
 
         stopRiskAnalyzingAnimation();
+
+        showAnalysisCompleteStatus();
+
+        resultSection.setAttribute(
+            "aria-busy",
+            "false"
+        );
 
         latestAnalysis =
             deepData;
@@ -852,15 +862,13 @@ function showDeepAnalysisPending() {
 
         riskLevel.textContent =
             t(
-                "ui.deep.analyzing",
-                "Analyzing"
+                "ui.deep.analyzing"
             );
 
 
         riskDescription.textContent =
             t(
-                "ui.deep.pendingDescription",
-                "Fast scan complete. Waiting for the deep AI analysis."
+                "ui.deep.pendingDescription"
             );
 
 
@@ -872,26 +880,42 @@ function showDeepAnalysisPending() {
             <div class="empty-result">
                 ${escapeHtml(
             t(
-                "ui.deep.pendingExposure",
-                "AI is analyzing the document context and privacy exposure areas."
+                "ui.deep.pendingExposure"
             )
         )}
             </div>
         `;
+
+    } else {
+
+        /*
+         * FAST 단계에서 이미 점수가 나온 경우에는
+         * 점수를 유지하면서 Deep AI 진행 상태만 표시한다.
+         */
+        if (riskCircle) {
+
+            riskCircle.classList.add(
+                "is-analyzing"
+            );
+        }
+
+
+        riskDescription.textContent =
+            t(
+                "ui.deep.pendingRiskDescription"
+            );
     }
 
 
     aiContext.textContent =
         t(
-            "ui.deep.pendingContext",
-            "Fast scan complete · Deep AI analysis in progress"
+            "ui.deep.pendingContext"
         );
 
 
     aiSummary.textContent =
         t(
-            "ui.deep.pendingSummary",
-            "These are preliminary results. AI is checking the document type and privacy exposure areas."
+            "ui.deep.pendingSummary"
         );
 }
 
@@ -899,6 +923,13 @@ function showDeepAnalysisPending() {
 function showDeepAnalysisFailed() {
 
     stopRiskAnalyzingAnimation();
+
+    showDeepAnalysisFailedStatus();
+
+    resultSection.setAttribute(
+        "aria-busy",
+        "false"
+    );
 
 
     if (latestAnalysis) {
@@ -921,6 +952,80 @@ function showDeepAnalysisFailed() {
             "ui.deep.failedSummary",
             "Deep AI analysis could not be completed. The fast scan result remains available."
         );
+}
+
+function showDeepAnalysisStatus() {
+
+    if (analysisResultStatus) {
+        analysisResultStatus.textContent =
+            t(
+                "ui.deep.resultPending"
+            );
+    }
+
+
+    if (imageScanStatus) {
+        imageScanStatus.textContent =
+            t(
+                "ui.deep.scanPending"
+            );
+    }
+
+
+    resultSection.setAttribute(
+        "aria-busy",
+        "true"
+    );
+}
+
+
+function showAnalysisCompleteStatus() {
+
+    if (analysisResultStatus) {
+        analysisResultStatus.textContent =
+            t(
+                "ui.result.complete"
+            );
+    }
+
+
+    if (imageScanStatus) {
+        imageScanStatus.textContent =
+            t(
+                "ui.result.scanComplete"
+            );
+    }
+
+
+    resultSection.setAttribute(
+        "aria-busy",
+        "false"
+    );
+}
+
+
+function showDeepAnalysisFailedStatus() {
+
+    if (analysisResultStatus) {
+        analysisResultStatus.textContent =
+            t(
+                "ui.deep.resultFailed"
+            );
+    }
+
+
+    if (imageScanStatus) {
+        imageScanStatus.textContent =
+            t(
+                "ui.deep.scanCompleteDeepFailed"
+            );
+    }
+
+
+    resultSection.setAttribute(
+        "aria-busy",
+        "false"
+    );
 }
 
 
@@ -2817,17 +2922,6 @@ function formatPiiType(type) {
                 "Date of Birth"
             );
 
-            if (
-                type === "SENSITIVE_DOCUMENT" &&
-                item.maskedValue === "PASSPORT"
-            ) {
-
-                return t(
-                    "ui.document.passport",
-                    "Passport"
-                );
-            }
-
         case "SENSITIVE_DOCUMENT":
             return t(
                 "ui.pii.sensitiveDocument",
@@ -2853,13 +2947,32 @@ function formatDetectedValue(item) {
 
 
     if (
-        type === "SENSITIVE_DOCUMENT" &&
-        item.maskedValue === "DRIVER_LICENSE"
+        type === "SENSITIVE_DOCUMENT"
     ) {
 
-        return t(
-            "ui.document.driverLicense"
-        );
+        const documentType =
+            String(
+                item.maskedValue || ""
+            ).toUpperCase();
+
+
+        switch (documentType) {
+
+            case "DRIVER_LICENSE":
+                return t(
+                    "ui.document.driverLicense"
+                );
+
+            case "PASSPORT":
+                return t(
+                    "ui.document.passport"
+                );
+
+            default:
+                return t(
+                    "ui.pii.sensitiveDocument"
+                );
+        }
     }
 
 

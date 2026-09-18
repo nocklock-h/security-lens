@@ -47,6 +47,8 @@ public class ImageAnalysisService {
     private final DocumentVisionAnalyzer documentVisionAnalyzer;
     private final ImageOrientationNormalizer imageOrientationNormalizer;
 
+    private final FastAnalysisCache fastAnalysisCache;
+
     public ImageAnalysisService(
             ImageMetadataService imageMetadataService,
             OcrService ocrService,
@@ -56,7 +58,8 @@ public class ImageAnalysisService {
             RiskScoreCalculator riskScoreCalculator,
             BoundingBoxResolver boundingBoxResolver,
             ImageOrientationNormalizer imageOrientationNormalizer,
-            MessageSource messageSource
+            MessageSource messageSource,
+            FastAnalysisCache fastAnalysisCache
     ) {
         this.imageMetadataService = imageMetadataService;
         this.ocrService = ocrService;
@@ -67,6 +70,7 @@ public class ImageAnalysisService {
         this.boundingBoxResolver = boundingBoxResolver;
         this.imageOrientationNormalizer = imageOrientationNormalizer;
         this.messageSource = messageSource;
+        this.fastAnalysisCache = fastAnalysisCache;
     }
 
     public AnalysisResponse analyzeFast(
@@ -99,6 +103,23 @@ public class ImageAnalysisService {
                         image
                 );
 
+        String analysisCacheKey =
+                fastAnalysisCache.createKey(
+                        image
+                );
+
+
+        fastAnalysisCache.put(
+                analysisCacheKey,
+                imageInfo,
+                metadataResult,
+                ocrResult
+        );
+
+
+        log.info(
+                "FAST analysis context cached."
+        );
 
         String normalizedText =
                 normalizeOcrText(
@@ -166,7 +187,9 @@ public class ImageAnalysisService {
                 metadataResult,
                 List.of(),
                 createSummary(
-                        riskLevel
+                        riskLevel,
+                        detectedItems,
+                        metadataResult
                 )
         );
     }
@@ -184,20 +207,82 @@ public class ImageAnalysisService {
 
         log.info("STEP 1 - analysis started");
 
-        ImageInfo imageInfo =
-                extractImageInfo(image);
+        String analysisCacheKey =
+                fastAnalysisCache.createKey(
+                        image
+                );
 
-        log.info("STEP 2 - image info completed");
 
-        MetadataResult metadataResult =
-                imageMetadataService.extract(image);
+        FastAnalysisCache.CachedAnalysis cached =
+                fastAnalysisCache.take(
+                        analysisCacheKey
+                );
 
-        log.info("STEP 3 - metadata completed");
 
-        OcrResult ocrResult =
-                ocrService.analyze(image);
+        ImageInfo imageInfo;
 
-        log.info("STEP 4 - OCR completed");
+        MetadataResult metadataResult;
+
+        OcrResult ocrResult;
+
+
+        if (cached != null) {
+
+            imageInfo =
+                    cached.imageInfo();
+
+            metadataResult =
+                    cached.metadata();
+
+            ocrResult =
+                    cached.ocrResult();
+
+
+            log.info(
+                    "STEP 2-4 - FAST analysis context reused. OCR skipped."
+            );
+
+
+        } else {
+
+            /*
+             * FAST 없이 /analyze/deep만 직접 호출했거나
+             * 캐시 TTL이 지난 경우에도 기존처럼 정상 동작한다.
+             */
+            log.info(
+                    "FAST analysis cache miss. Running full analysis."
+            );
+
+
+            imageInfo =
+                    extractImageInfo(
+                            image
+                    );
+
+            log.info(
+                    "STEP 2 - image info completed"
+            );
+
+
+            metadataResult =
+                    imageMetadataService.extract(
+                            image
+                    );
+
+            log.info(
+                    "STEP 3 - metadata completed"
+            );
+
+
+            ocrResult =
+                    ocrService.analyze(
+                            image
+                    );
+
+            log.info(
+                    "STEP 4 - OCR completed"
+            );
+        }
 
         String extractedText =
                 ocrResult.text();
@@ -476,7 +561,11 @@ public class ImageAnalysisService {
                 detectedItems,
                 metadataResult,
                 List.of(),
-                createSummary(riskLevel)
+                createSummary(
+                        riskLevel,
+                        detectedItems,
+                        metadataResult
+                )
         );
     }
 
@@ -543,21 +632,302 @@ public class ImageAnalysisService {
                 .trim();
     }
 
-    private String createSummary(RiskLevel riskLevel) {
-        String messageKey = switch (riskLevel) {
-            case LOW -> "analysis.summary.low";
-            case MEDIUM -> "analysis.summary.medium";
-            case HIGH -> "analysis.summary.high";
-            case CRITICAL -> "analysis.summary.critical";
-        };
+    private String createSummary(
+            RiskLevel riskLevel,
+            List<DetectedItem> detectedItems,
+            MetadataResult metadataResult
+    ) {
 
-        return getMessage(messageKey);
+        List<String> summaries =
+                new ArrayList<>();
+
+
+        /*
+         * 1. 민감 문서 맥락
+         */
+        DetectedItem documentItem =
+                detectedItems
+                        .stream()
+                        .filter(
+                                item ->
+                                        item.type()
+                                                == PiiType.SENSITIVE_DOCUMENT
+                        )
+                        .findFirst()
+                        .orElse(null);
+
+
+        if (documentItem != null) {
+
+            String documentType =
+                    documentItem.maskedValue() == null
+                            ? ""
+                            : documentItem.maskedValue()
+                            .toUpperCase();
+
+
+            switch (documentType) {
+
+                case "DRIVER_LICENSE" ->
+                        summaries.add(
+                                getMessage(
+                                        "analysis.summary.document.driverLicense"
+                                )
+                        );
+
+                case "PASSPORT" ->
+                        summaries.add(
+                                getMessage(
+                                        "analysis.summary.document.passport"
+                                )
+                        );
+
+                default ->
+                        summaries.add(
+                                getMessage(
+                                        "analysis.summary.document.sensitive"
+                                )
+                        );
+            }
+        }
+
+
+        /*
+         * 2. 화면에서 발견된 개인정보 종류
+         */
+        List<String> piiLabels =
+                detectedItems
+                        .stream()
+
+                        .filter(
+                                item ->
+                                        item.type()
+                                                != PiiType.SENSITIVE_DOCUMENT
+                        )
+
+                        .map(
+                                DetectedItem::type
+                        )
+
+                        .distinct()
+
+                        .map(
+                                this::getPiiSummaryLabel
+                        )
+
+                        .filter(
+                                label ->
+                                        label != null
+                                                && !label.isBlank()
+                        )
+
+                        .toList();
+
+
+        if (!piiLabels.isEmpty()) {
+
+            summaries.add(
+                    getMessage(
+                            "analysis.summary.detectedItems",
+                            String.join(
+                                    " · ",
+                                    piiLabels
+                            )
+                    )
+            );
+        }
+
+
+        /*
+         * 3. 숨겨진 메타데이터
+         */
+        List<String> metadataLabels =
+                new ArrayList<>();
+
+
+        if (
+                metadataResult != null
+                        &&
+                        metadataResult.gps() != null
+                        &&
+                        metadataResult.gps().detected()
+        ) {
+
+            metadataLabels.add(
+                    getMessage(
+                            "ui.metadata.location"
+                    )
+            );
+        }
+
+
+        if (
+                metadataResult != null
+                        &&
+                        metadataResult.capturedAt() != null
+                        &&
+                        !metadataResult.capturedAt().isBlank()
+        ) {
+
+            metadataLabels.add(
+                    getMessage(
+                            "ui.metadata.capturedAt"
+                    )
+            );
+        }
+
+
+        if (
+                metadataResult != null
+                        &&
+                        metadataResult.device() != null
+                        &&
+                        metadataResult.device().detected()
+        ) {
+
+            metadataLabels.add(
+                    getMessage(
+                            "ui.metadata.device"
+                    )
+            );
+        }
+
+
+        if (!metadataLabels.isEmpty()) {
+
+            summaries.add(
+                    getMessage(
+                            "analysis.summary.metadataDetected",
+                            String.join(
+                                    " · ",
+                                    metadataLabels
+                            )
+                    )
+            );
+        }
+
+
+        /*
+         * 구체적인 노출 요소가 발견됐다면
+         * 사용자 행동까지 안내한다.
+         */
+        if (!summaries.isEmpty()) {
+
+            summaries.add(
+                    getMessage(
+                            "analysis.summary.protectRecommended"
+                    )
+            );
+
+            return String.join(
+                    " ",
+                    summaries
+            );
+        }
+
+
+        /*
+         * 구체적인 개인정보가 없을 경우
+         * 기존 RiskLevel 기반 설명을 fallback으로 사용한다.
+         */
+        return createRiskSummary(
+                riskLevel
+        );
     }
 
-    private String getMessage(String messageKey) {
+
+    private String getPiiSummaryLabel(
+            PiiType type
+    ) {
+
+        if (type == null) {
+            return null;
+        }
+
+
+        return switch (type) {
+
+            case PHONE ->
+                    getMessage(
+                            "ui.pii.phone"
+                    );
+
+            case EMAIL ->
+                    getMessage(
+                            "ui.pii.email"
+                    );
+
+            case PERSON_NAME ->
+                    getMessage(
+                            "ui.pii.personName"
+                    );
+
+            case ADDRESS ->
+                    getMessage(
+                            "ui.pii.address"
+                    );
+
+            case RRN ->
+                    getMessage(
+                            "ui.pii.rrn"
+                    );
+
+            case DRIVER_LICENSE_NUMBER ->
+                    getMessage(
+                            "ui.pii.driverLicenseNumber"
+                    );
+
+            case PASSPORT_NUMBER ->
+                    getMessage(
+                            "ui.pii.passportNumber"
+                    );
+
+            case DATE_OF_BIRTH ->
+                    getMessage(
+                            "ui.pii.dateOfBirth"
+                    );
+
+            default ->
+                    null;
+        };
+    }
+
+
+    private String createRiskSummary(
+            RiskLevel riskLevel
+    ) {
+
+        String messageKey =
+                switch (riskLevel) {
+
+                    case LOW ->
+                            "analysis.summary.low";
+
+                    case MEDIUM ->
+                            "analysis.summary.medium";
+
+                    case HIGH ->
+                            "analysis.summary.high";
+
+                    case CRITICAL ->
+                            "analysis.summary.critical";
+                };
+
+
+        return getMessage(
+                messageKey
+        );
+    }
+
+
+    private String getMessage(
+            String messageKey,
+            Object... arguments
+    ) {
+
         return messageSource.getMessage(
                 messageKey,
-                null,
+                arguments,
                 LocaleContextHolder.getLocale()
         );
     }
