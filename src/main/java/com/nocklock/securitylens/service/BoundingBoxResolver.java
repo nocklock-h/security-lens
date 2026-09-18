@@ -36,7 +36,7 @@ public class BoundingBoxResolver {
 
     private static final Pattern DRIVER_LICENSE_PATTERN =
             Pattern.compile(
-                    "\\d{2}-\\d{2}-\\d{6}-\\d{2}"
+                    "(?<!\\d)\\d{2}-?\\d{2}-?\\d{6}-?\\d{2}(?!\\d)"
             );
 
     private static final Pattern DATE_LIKE_PATTERN =

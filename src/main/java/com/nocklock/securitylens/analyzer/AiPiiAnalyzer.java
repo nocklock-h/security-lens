@@ -24,6 +24,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import com.nocklock.securitylens.dto.OcrWord;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 
 @Component
 public class AiPiiAnalyzer {
@@ -47,8 +48,15 @@ public class AiPiiAnalyzer {
         this.aiResultValidator = aiResultValidator;
         this.jsonMapper = jsonMapper;
 
+        SimpleClientHttpRequestFactory requestFactory =
+                new SimpleClientHttpRequestFactory();
+
+        requestFactory.setConnectTimeout(2_000);
+        requestFactory.setReadTimeout(15_000);
+
         this.restClient = RestClient.builder()
                 .baseUrl(aiProperties.getBaseUrl())
+                .requestFactory(requestFactory)
                 .build();
     }
 

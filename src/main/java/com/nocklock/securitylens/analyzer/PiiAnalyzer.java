@@ -57,7 +57,7 @@ public class PiiAnalyzer {
      */
     private static final Pattern DRIVER_LICENSE_PATTERN =
             Pattern.compile(
-                    "(?<!\\d)\\d{2}-\\d{2}-\\d{6}-\\d{2}(?!\\d)"
+                    "(?<!\\d)\\d{2}-?\\d{2}-?\\d{6}-?\\d{2}(?!\\d)"
             );
 
 

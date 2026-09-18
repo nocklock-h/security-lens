@@ -63,14 +63,22 @@ public class ImageAnalysisService {
         //전체시간측정
         long analysisStartTime = System.nanoTime();
 
+        log.info("STEP 1 - analysis started");
+
         ImageInfo imageInfo =
                 extractImageInfo(image);
+
+        log.info("STEP 2 - image info completed");
 
         MetadataResult metadataResult =
                 imageMetadataService.extract(image);
 
+        log.info("STEP 3 - metadata completed");
+
         OcrResult ocrResult =
                 ocrService.analyze(image);
+
+        log.info("STEP 4 - OCR completed");
 
         String extractedText =
                 ocrResult.text();
@@ -83,13 +91,38 @@ public class ImageAnalysisService {
         String normalizedText =
                 normalizeOcrText(extractedText);
 
+        long digitCount =
+                normalizedText.chars()
+                        .filter(Character::isDigit)
+                        .count();
+
+        String compactText =
+                normalizedText.replaceAll(
+                        "\\s+",
+                        ""
+                );
+
+        boolean hasDriverLicenseKeyword =
+                compactText.contains("운전면허");
+
+        boolean hasLooseDriverLicenseNumber =
+                java.util.regex.Pattern.compile(
+                                "(?<!\\d)\\d{2}[-\\s.:·]*\\d{2}[-\\s.:·]*\\d{6}[-\\s.:·]*\\d{2}(?!\\d)"
+                        )
+                        .matcher(normalizedText)
+                        .find();
+
         List<DetectedItem> detectedItems =
                 new ArrayList<>(
                         piiAnalyzer.analyze(normalizedText)
                 );
 
+        log.info("STEP 5 - rule based PII completed");
+
         long aiStartTime =
                 System.nanoTime();
+
+        log.info("STEP 6 - AI analysis started");
 
         AiPiiDetectionResult aiResult =
                 aiPiiAnalyzer.analyze(
@@ -97,6 +130,8 @@ public class ImageAnalysisService {
                         ocrResult.words(),
                         detectedItems.size() + 1
                 );
+
+        log.info("STEP 7 - AI analysis finished");
 
 
         boolean aiDetectedAddress =
