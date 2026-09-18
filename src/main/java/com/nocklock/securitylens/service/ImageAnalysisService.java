@@ -127,19 +127,51 @@ public class ImageAnalysisService {
 
         log.info("STEP 5 - rule based PII completed");
 
+        boolean lowQualityOcr =
+                ocrService.isLowQuality(
+                        ocrResult
+                );
+
+
+        log.info(
+                "OCR quality evaluated. lowQuality={}, wordCount={}",
+                lowQualityOcr,
+                ocrResult.words().size()
+        );
+
         long aiStartTime =
                 System.nanoTime();
 
-        log.info("STEP 6 - AI analysis started");
 
         AiPiiDetectionResult aiResult =
-                aiPiiAnalyzer.analyze(
-                        normalizedText,
-                        ocrResult.words(),
-                        detectedItems.size() + 1
-                );
+                AiPiiDetectionResult.empty();
 
-        log.info("STEP 7 - AI analysis finished");
+
+        if (!lowQualityOcr) {
+
+            log.info(
+                    "STEP 6 - AI text analysis started"
+            );
+
+
+            aiResult =
+                    aiPiiAnalyzer.analyze(
+                            normalizedText,
+                            ocrResult.words(),
+                            detectedItems.size() + 1
+                    );
+
+
+            log.info(
+                    "STEP 7 - AI text analysis finished"
+            );
+
+        } else {
+
+            log.info(
+                    "STEP 6 - AI text analysis skipped. reason=LOW_OCR_QUALITY"
+            );
+        }
 
 
         boolean aiDetectedAddress =
@@ -174,14 +206,19 @@ public class ImageAnalysisService {
 
         //AI 검증 필요여부
         boolean needsDocumentVision =
-                detectedItems.isEmpty();
+                lowQualityOcr
+                        ||
+                        detectedItems.isEmpty();
 
         //시간측정
         long aiDurationMs =
-                (System.nanoTime() - aiStartTime) / 1_000_000;
+                (System.nanoTime() - aiStartTime)
+                        / 1_000_000;
+
 
         log.info(
-                "AI PII analysis completed. durationMs={}",
+                "AI text analysis phase completed. skipped={}, durationMs={}",
+                lowQualityOcr,
                 aiDurationMs
         );
 

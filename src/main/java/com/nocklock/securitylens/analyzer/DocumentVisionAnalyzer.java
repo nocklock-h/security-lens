@@ -110,10 +110,22 @@ public class DocumentVisionAnalyzer {
                     );
 
 
+            String visionModel =
+                    aiProperties.getVisionModel();
+
+            if (
+                    visionModel == null
+                            ||
+                            visionModel.isBlank()
+            ) {
+                visionModel =
+                        aiProperties.getModel();
+            }
+
             Map<String, Object> requestBody =
                     Map.of(
                             "model",
-                            aiProperties.getModel(),
+                            visionModel,
 
                             "store",
                             false,
@@ -155,7 +167,8 @@ public class DocumentVisionAnalyzer {
 
 
             log.info(
-                    "Document vision request started"
+                    "Document vision request started. model={}",
+                    visionModel
             );
 
 
@@ -299,7 +312,33 @@ public class DocumentVisionAnalyzer {
             3. 각 field의 boundingBox는 해당 개인정보 값 전체를 가려야 한다.
                라벨 글자보다 실제 값 영역을 우선한다.
 
-            4. 이름이 여러 글자라면 이름 전체를 포함한다.
+            4. PERSON_NAME은 성을 포함한 이름의 모든 글자를 포함한다.
+               특히 가장 왼쪽 첫 글자가 boundingBox 밖으로 잘리지 않도록 한다.
+               단, 주변 라벨이나 사진 영역 또는 다른 개인정보 필드는 포함하지 않는다.
+               운전면허증(DRIVER_LICENSE)을 분석할 때는 각 필드를 서로 혼동하지 않는다.
+                
+               대한민국 운전면허증의 경우 일반적으로 다음과 같은 상대적 배치를 가진다.
+            
+               - DRIVER_LICENSE_NUMBER:
+                 문서 상단의 긴 식별번호 영역이다.
+                 PERSON_NAME보다 위에 있으며 짧은 이름 영역으로 지정하지 않는다.
+            
+               - PERSON_NAME:
+                 운전면허번호 아래에 위치하는 비교적 짧은 이름 문자열 영역이다.
+                 성을 포함한 이름 전체만 포함하며 주민등록번호 영역과 혼동하지 않는다.
+            
+               - RRN:
+                 이름 아래쪽의 긴 숫자 식별번호 영역이다.
+                 PERSON_NAME과 동일한 boundingBox를 사용하지 않는다.
+            
+               - ADDRESS:
+                 주민등록번호보다 아래에 위치하며 여러 글자 또는 여러 줄일 수 있다.
+            
+               각 개인정보 field는 서로 다른 실제 영역이어야 한다.
+               서로 크게 겹치는 boundingBox를 여러 field에 중복 지정하지 않는다.
+            
+               DRIVER_LICENSE_NUMBER와 RRN은 일반적으로
+               PERSON_NAME보다 가로로 긴 영역이다.
 
             5. 주민등록번호나 운전면허번호가 여러 OCR 조각으로 보이더라도
                번호 전체가 포함되도록 하나의 boundingBox를 반환한다.

@@ -136,55 +136,21 @@ public class OcrService {
             ITesseract tesseract =
                     createTesseract();
 
-
             /*
-             * 1단계
-             * 전체 OCR 텍스트를 생성한다.
+             * Single-pass OCR
              *
-             * 이 텍스트는
-             * 주민번호 / 운전면허번호 / 전화번호 / 주소 등
-             * PII 탐지에 사용한다.
+             * 기존에는 같은 이미지에 대해
+             * doOCR() + getWords()를 각각 실행했다.
+             *
+             * 이제 getWords() 한 번으로
+             * 텍스트와 BoundingBox를 모두 생성한다.
              */
-            long textRecognitionStart =
+            long recognitionStart =
                     System.nanoTime();
 
 
             log.info(
-                    "OCR STEP 5A - text recognition started"
-            );
-
-
-            String text =
-                    tesseract.doOCR(
-                            preprocessedImage
-                    );
-
-
-            long textRecognitionDurationMs =
-                    (System.nanoTime() - textRecognitionStart)
-                            / 1_000_000;
-
-
-            log.info(
-                    "OCR STEP 5A - text recognition completed. durationMs={}, textLength={}",
-                    textRecognitionDurationMs,
-                    text == null
-                            ? 0
-                            : text.length()
-            );
-
-
-            /*
-             * 2단계
-             * BoundingBox 생성을 위해
-             * 단어 단위 OCR 결과와 좌표를 가져온다.
-             */
-            long wordRecognitionStart =
-                    System.nanoTime();
-
-
-            log.info(
-                    "OCR STEP 5B - word recognition started"
+                    "OCR STEP 5 - single-pass recognition started"
             );
 
 
@@ -195,14 +161,14 @@ public class OcrService {
                     );
 
 
-            long wordRecognitionDurationMs =
-                    (System.nanoTime() - wordRecognitionStart)
+            long recognitionDurationMs =
+                    (System.nanoTime() - recognitionStart)
                             / 1_000_000;
 
 
             log.info(
-                    "OCR STEP 5B - word recognition completed. durationMs={}, rawWordCount={}",
-                    wordRecognitionDurationMs,
+                    "OCR STEP 5 - single-pass recognition completed. durationMs={}, rawWordCount={}",
+                    recognitionDurationMs,
                     tessWords.size()
             );
 
@@ -258,6 +224,17 @@ public class OcrService {
                             .toList();
 
             /*
+             * getWords() 결과에서 전체 OCR 텍스트를 재구성한다.
+             *
+             * 별도의 doOCR() 호출이 없으므로
+             * OCR 엔진은 한 번만 실행된다.
+             */
+            String text =
+                    buildTextFromWords(
+                            validWords
+                    );
+
+            /*
              * OCR 좌표는 전처리 이미지 기준이다.
              *
              * scaleRatio로 나눠
@@ -300,17 +277,6 @@ public class OcrService {
                             })
 
                             .toList();
-            double highConfidenceRatio =
-                    tessWords.isEmpty()
-                            ? 0.0
-                            : (double) confidence70 / tessWords.size();
-
-
-            boolean lowQualityOcr =
-                    words.size() < DOCUMENT_FALLBACK_MIN_WORDS
-                            ||
-                            highConfidenceRatio
-                                    < DOCUMENT_FALLBACK_MIN_HIGH_CONFIDENCE_RATIO;
 
             long totalDurationMs =
                     (System.nanoTime() - ocrStartTime)
@@ -331,7 +297,7 @@ public class OcrService {
             );
 
 
-        } catch (IOException | TesseractException e) {
+        } catch (IOException e) {
 
             throw new OcrException(
                     OcrErrorCode.ANALYSIS_FAILED,

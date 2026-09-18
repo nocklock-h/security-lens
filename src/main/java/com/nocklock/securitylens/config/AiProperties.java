@@ -10,6 +10,7 @@ public class AiProperties {
     private String baseUrl;
     private String model;
     private String apiKey;
+    private String visionModel;
 
     public String getBaseUrl() {
         return baseUrl;
@@ -33,5 +34,13 @@ public class AiProperties {
 
     public void setApiKey(String apiKey) {
         this.apiKey = apiKey;
+    }
+
+    public String getVisionModel() {
+        return visionModel;
+    }
+
+    public void setVisionModel(String visionModel) {
+        this.visionModel = visionModel;
     }
 }
