@@ -1063,8 +1063,7 @@ function renderVisibleExposure(items) {
             <span>
                 ${escapeHtml(
                 t(
-                    "ui.result.protectThis",
-                    "Protect"
+                    "ui.result.protectThis"
                 )
             )}
             </span>
@@ -2476,28 +2475,60 @@ function formatDetectedValue(item) {
     ) {
 
         return t(
-            "ui.document.driverLicense",
-            "Driver's License"
+            "ui.document.driverLicense"
         );
     }
 
 
+    const detectedLabel =
+        t(
+            "ui.pii.detected"
+        );
+
+
+    /*
+     * 이름은 OCR 문자열이 일부 누락될 수 있으므로
+     * 잘못된 부분 마스킹 값을 사용자에게 보여주지 않는다.
+     */
     if (
         type === "PERSON_NAME"
     ) {
 
-        return t(
-            "ui.pii.detected.personName",
-            "Name detected"
-        );
+        return detectedLabel;
     }
 
 
-    return (
-        item.maskedValue ||
-        item.value ||
-        "Detected"
-    );
+    /*
+     * 주소도 OCR/AI가 안전한 표시값을 만들지 못한 경우
+     * 감지 사실만 표시한다.
+     */
+    if (
+        type === "ADDRESS" &&
+        (
+            !item.maskedValue ||
+            item.maskedValue === "ADDRESS_DETECTED" ||
+            item.maskedValue === "***"
+        )
+    ) {
+
+        return detectedLabel;
+    }
+
+
+    /*
+     * 전화번호 / 이메일 / 정상적으로 마스킹된 주소 등은
+     * 감지 상태 + 안전한 마스킹 값을 함께 표시한다.
+     */
+    if (
+        item.maskedValue &&
+        !item.maskedValue.endsWith("_DETECTED")
+    ) {
+
+        return `${detectedLabel} · ${item.maskedValue}`;
+    }
+
+
+    return detectedLabel;
 }
 
 function normalizeConfidence(value) {

@@ -9,6 +9,7 @@ public class AiProperties {
 
     private String baseUrl;
     private String model;
+    private String apiKey;
 
     public String getBaseUrl() {
         return baseUrl;
@@ -24,5 +25,13 @@ public class AiProperties {
 
     public void setModel(String model) {
         this.model = model;
+    }
+
+    public String getApiKey() {
+        return apiKey;
+    }
+
+    public void setApiKey(String apiKey) {
+        this.apiKey = apiKey;
     }
 }

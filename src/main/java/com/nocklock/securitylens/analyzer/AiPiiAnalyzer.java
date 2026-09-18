@@ -6,8 +6,7 @@ import com.nocklock.securitylens.domain.PiiType;
 import com.nocklock.securitylens.dto.AiAnalysisResponse;
 import com.nocklock.securitylens.dto.AiDetectedItem;
 import com.nocklock.securitylens.dto.DetectedItem;
-import com.nocklock.securitylens.dto.OllamaGenerateRequest;
-import com.nocklock.securitylens.dto.OllamaGenerateResponse;
+
 import com.nocklock.securitylens.service.AiResultValidator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,6 +24,8 @@ import java.util.Map;
 
 import com.nocklock.securitylens.dto.OcrWord;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
+
+import org.springframework.http.HttpHeaders;
 
 @Component
 public class AiPiiAnalyzer {
@@ -56,6 +57,10 @@ public class AiPiiAnalyzer {
 
         this.restClient = RestClient.builder()
                 .baseUrl(aiProperties.getBaseUrl())
+                .defaultHeader(
+                        HttpHeaders.AUTHORIZATION,
+                        "Bearer " + aiProperties.getApiKey()
+                )
                 .requestFactory(requestFactory)
                 .build();
     }
@@ -79,38 +84,76 @@ public class AiPiiAnalyzer {
         }
 
         try {
-            OllamaGenerateResponse ollamaResponse =
-                    restClient.post()
-                            .uri("/api/generate")
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .body(
-                                    new OllamaGenerateRequest(
-                                            aiProperties.getModel(),
-                                            createPrompt(words),
-                                            false,
-                                            "json"
-                                    )
-                            )
-                            .retrieve()
-                            .body(OllamaGenerateResponse.class);
 
-            if (ollamaResponse == null
-                    || ollamaResponse.response() == null
-                    || ollamaResponse.response().isBlank()) {
+            log.info(
+                    "OpenAI PII request started. wordCount={}",
+                    words.size()
+            );
+
+            Map<String, Object> requestBody =
+                    Map.of(
+                            "model",
+                            aiProperties.getModel(),
+
+                            "input",
+                            createPrompt(words),
+
+                            "store",
+                            false,
+
+                            "text",
+                            Map.of(
+                                    "format",
+                                    createResponseFormat()
+                            )
+                    );
+
+
+            OpenAiResponse openAiResponse =
+                    restClient.post()
+                            .uri("/v1/responses")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .body(requestBody)
+                            .retrieve()
+                            .body(OpenAiResponse.class);
+
+            log.info(
+                    "OpenAI PII response received"
+            );
+
+            String responseText =
+                    extractOutputText(
+                            openAiResponse
+                    );
+
+
+            if (
+                    responseText == null
+                            ||
+                            responseText.isBlank()
+            ) {
+
+                log.warn(
+                        "OpenAI returned empty response. fallbackToRuleBasedOnly=true"
+                );
+
                 return AiPiiDetectionResult.empty();
             }
 
+
             AiAnalysisResponse aiAnalysisResponse =
                     jsonMapper.readValue(
-                            ollamaResponse.response(),
+                            responseText,
                             AiAnalysisResponse.class
                     );
+
 
             List<AiDetectedItem> validatedItems =
                     aiResultValidator.validate(
                             aiAnalysisResponse,
                             words
                     );
+
 
             log.info(
                     "AI PII validated. items={}",
@@ -127,6 +170,7 @@ public class AiPiiAnalyzer {
                             .toList()
             );
 
+
             return toDetectionResult(
                     validatedItems,
                     words,
@@ -134,12 +178,170 @@ public class AiPiiAnalyzer {
             );
 
         } catch (Exception e) {
+
             log.warn(
                     "AI PII analysis failed. fallbackToRuleBasedOnly=true",
                     e
             );
+
             return AiPiiDetectionResult.empty();
         }
+
+    }
+
+    private Map<String, Object> createResponseFormat() {
+
+        Map<String, Object> detectedItemSchema =
+                Map.of(
+                        "type",
+                        "object",
+
+                        "additionalProperties",
+                        false,
+
+                        "properties",
+                        Map.of(
+                                "type",
+                                Map.of(
+                                        "type",
+                                        "string",
+                                        "enum",
+                                        List.of(
+                                                "PERSON_NAME",
+                                                "ADDRESS"
+                                        )
+                                ),
+
+                                "wordIds",
+                                Map.of(
+                                        "type",
+                                        "array",
+                                        "items",
+                                        Map.of(
+                                                "type",
+                                                "integer"
+                                        )
+                                ),
+
+                                "confidence",
+                                Map.of(
+                                        "type",
+                                        "number",
+                                        "minimum",
+                                        0,
+                                        "maximum",
+                                        1
+                                )
+                        ),
+
+                        "required",
+                        List.of(
+                                "type",
+                                "wordIds",
+                                "confidence"
+                        )
+                );
+
+
+        Map<String, Object> schema =
+                Map.of(
+                        "type",
+                        "object",
+
+                        "additionalProperties",
+                        false,
+
+                        "properties",
+                        Map.of(
+                                "detectedItems",
+                                Map.of(
+                                        "type",
+                                        "array",
+                                        "items",
+                                        detectedItemSchema
+                                )
+                        ),
+
+                        "required",
+                        List.of(
+                                "detectedItems"
+                        )
+                );
+
+
+        return Map.of(
+                "type",
+                "json_schema",
+
+                "name",
+                "security_lens_pii",
+
+                "strict",
+                true,
+
+                "schema",
+                schema
+        );
+    }
+
+
+    private String extractOutputText(
+            OpenAiResponse response
+    ) {
+
+        if (
+                response == null
+                        ||
+                        response.output() == null
+        ) {
+            return null;
+        }
+
+
+        for (OpenAiOutput output : response.output()) {
+
+            if (
+                    output.content() == null
+            ) {
+                continue;
+            }
+
+
+            for (OpenAiContent content : output.content()) {
+
+                if (
+                        "output_text".equals(
+                                content.type()
+                        )
+                ) {
+
+                    return content.text();
+                }
+            }
+        }
+
+
+        return null;
+    }
+
+
+    private record OpenAiResponse(
+            List<OpenAiOutput> output
+    ) {
+    }
+
+
+    private record OpenAiOutput(
+            String type,
+            List<OpenAiContent> content
+    ) {
+    }
+
+
+    private record OpenAiContent(
+            String type,
+            String text
+    ) {
     }
 
     private AiPiiDetectionResult toDetectionResult(
@@ -215,8 +417,17 @@ public class AiPiiAnalyzer {
 
 
             String maskedValue =
-                    "***";
+                    switch (type) {
 
+                        case PERSON_NAME ->
+                                "NAME_DETECTED";
+
+                        case ADDRESS ->
+                                "ADDRESS_DETECTED";
+
+                        default ->
+                                "PII_DETECTED";
+                    };
 
             detectedItems.add(
                     new DetectedItem(
@@ -243,17 +454,6 @@ public class AiPiiAnalyzer {
                 detectedItems,
                 wordIdsById
         );
-    }
-
-    private String maskName(String sourceText) {
-        String normalizedText = sourceText.trim();
-
-        if (normalizedText.length() <= 1) {
-            return "*";
-        }
-
-        return normalizedText.charAt(0)
-                + "*".repeat(normalizedText.length() - 1);
     }
 
     private String createPrompt(
@@ -296,28 +496,40 @@ public class AiPiiAnalyzer {
 
             규칙:
 
-            1. PERSON_NAME은 실제 사람 이름일 때만 반환한다.
-
-            2. 문서 제목, 기관명, 지역명, 직함 등을
-               사람 이름으로 오인하지 않는다.
-
-            3. ADDRESS는 현재 이미지 문맥에서
-               개인과 연결되는 구체적인 주소일 때만 반환한다.
-
-            4. 주소가 여러 줄에 걸쳐 있다면
-               상세주소를 구성하는 모든 Word ID를 포함한다.
-
-            5. 도시명이나 지역명만 있는 경우에는
-               ADDRESS로 반환하지 않는다.
-
-            6. PERSON_NAME과 ADDRESS가 모두 존재하면
-               둘 다 반환한다.
-
-            7. 반드시 아래 목록에 존재하는 Word ID만 사용한다.
-
-            8. 확신할 수 없는 개인정보는 반환하지 않는다.
-
-            9. 결과는 JSON만 반환한다.
+            1. PERSON_NAME은 현재 이미지의 문맥에서
+            실제 사람의 이름으로 판단되는 경우에만 반환한다.
+                
+            2. 문서 제목, 기관명, 회사명, 브랜드명, 지역명, 직함, 일반 명사 등을
+            사람 이름으로 오인하지 않는다.
+            
+            3. PERSON_NAME은 언어와 국가에 따라 표기 방식이 다를 수 있다.
+            이름의 길이, 단어 수, 문자 종류, 성/이름 순서에 의존하지 않는다.
+            
+            4. 여러 단어로 구성된 이름이라면
+            실제 사람 이름을 구성하는 모든 Word ID를 포함한다.
+            
+            5. ADDRESS는 현재 이미지의 문맥에서
+            개인 또는 특정 대상의 위치를 구체적으로 식별할 수 있는 주소일 때만 반환한다.
+            
+            6. ADDRESS는 국가와 언어에 따라 형식이 다를 수 있다.
+            특정 국가의 행정구역명, 주소 순서, 도로명/지번 형식에 의존하지 않는다.
+            
+            7. 도로명, 지번, 건물명, 호수, 우편번호 등
+            여러 요소가 주소를 구성하는 경우 관련 Word ID를 모두 포함한다.
+            
+            8. 도시명, 국가명, 광역 지역명처럼
+            위치 범위가 너무 넓어 개인의 구체적 위치를 식별하기 어려운 경우에는
+            ADDRESS로 반환하지 않는다.
+            
+            9. PERSON_NAME과 ADDRESS가 모두 존재하면
+            둘 다 반환한다.
+            
+            10. 반드시 아래 OCR WORDS 목록에 존재하는 Word ID만 사용한다.
+            새로운 문자열이나 존재하지 않는 Word ID를 생성하지 않는다.
+            
+            11. 개인정보 여부가 불확실한 경우에는 반환하지 않는다.
+            
+            12. 결과는 지정된 JSON 형식으로만 반환한다.
 
 
             OCR WORDS:

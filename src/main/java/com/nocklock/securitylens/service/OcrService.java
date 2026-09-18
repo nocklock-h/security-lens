@@ -26,6 +26,8 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.nocklock.securitylens.dto.BoundingBox;
+
 @Service
 public class OcrService {
 
@@ -36,6 +38,12 @@ public class OcrService {
 
     private static final int MIN_OCR_DIMENSION = 1600;
     private static final int MAX_OCR_DIMENSION = 3000;
+
+    private static final double DOCUMENT_FALLBACK_MIN_HIGH_CONFIDENCE_RATIO = 0.45;
+    private static final int DOCUMENT_FALLBACK_MIN_WORDS = 8;
+
+    private static final int DOCUMENT_PSM = 11;
+    private static final int DOCUMENT_TARGET_DIMENSION = 2800;
 
     public OcrService(OcrProperties ocrProperties) {
         this.ocrProperties = ocrProperties;
@@ -292,7 +300,17 @@ public class OcrService {
                             })
 
                             .toList();
+            double highConfidenceRatio =
+                    tessWords.isEmpty()
+                            ? 0.0
+                            : (double) confidence70 / tessWords.size();
 
+
+            boolean lowQualityOcr =
+                    words.size() < DOCUMENT_FALLBACK_MIN_WORDS
+                            ||
+                            highConfidenceRatio
+                                    < DOCUMENT_FALLBACK_MIN_HIGH_CONFIDENCE_RATIO;
 
             long totalDurationMs =
                     (System.nanoTime() - ocrStartTime)
@@ -320,6 +338,866 @@ public class OcrService {
                     e
             );
         }
+    }
+
+    public OcrResult analyzeRegion(
+            MultipartFile image,
+            BoundingBox boundingBox
+    ) {
+
+        try {
+
+            BufferedImage originalImage =
+                    ImageIO.read(
+                            image.getInputStream()
+                    );
+
+
+            if (originalImage == null) {
+
+                throw new OcrException(
+                        OcrErrorCode.UNSUPPORTED_IMAGE
+                );
+            }
+
+
+            if (boundingBox == null) {
+
+                return new OcrResult(
+                        "",
+                        List.of()
+                );
+            }
+
+
+            int imageWidth =
+                    originalImage.getWidth();
+
+            int imageHeight =
+                    originalImage.getHeight();
+
+
+            int x =
+                    Math.max(
+                            0,
+                            (int) Math.floor(
+                                    boundingBox.x()
+                            )
+                    );
+
+            int y =
+                    Math.max(
+                            0,
+                            (int) Math.floor(
+                                    boundingBox.y()
+                            )
+                    );
+
+
+            int right =
+                    Math.min(
+                            imageWidth,
+                            (int) Math.ceil(
+                                    boundingBox.x()
+                                            + boundingBox.width()
+                            )
+                    );
+
+            int bottom =
+                    Math.min(
+                            imageHeight,
+                            (int) Math.ceil(
+                                    boundingBox.y()
+                                            + boundingBox.height()
+                            )
+                    );
+
+
+            int width =
+                    right - x;
+
+            int height =
+                    bottom - y;
+
+
+            if (
+                    width <= 0
+                            ||
+                            height <= 0
+            ) {
+
+                return new OcrResult(
+                        "",
+                        List.of()
+                );
+            }
+
+
+            Rectangle roi =
+                    new Rectangle(
+                            x,
+                            y,
+                            width,
+                            height
+                    );
+
+
+            log.info(
+                    "OCR document region started. x={}, y={}, width={}, height={}",
+                    roi.x,
+                    roi.y,
+                    roi.width,
+                    roi.height
+            );
+
+
+            long startTime =
+                    System.nanoTime();
+
+
+            OcrResult result =
+                    recognizeDocumentRegion(
+                            originalImage,
+                            roi
+                    );
+
+
+            long durationMs =
+                    (System.nanoTime() - startTime)
+                            / 1_000_000;
+
+
+            if (result == null) {
+
+                log.info(
+                        "OCR document region completed. success=false, durationMs={}",
+                        durationMs
+                );
+
+                return new OcrResult(
+                        "",
+                        List.of()
+                );
+            }
+
+
+            log.info(
+                    "OCR document region completed. success=true, wordCount={}, quality={}, durationMs={}",
+                    result.words().size(),
+                    calculateOcrQuality(
+                            result.words()
+                    ),
+                    durationMs
+            );
+
+
+            return result;
+
+
+        } catch (IOException e) {
+
+            throw new OcrException(
+                    OcrErrorCode.ANALYSIS_FAILED,
+                    e
+            );
+        }
+    }
+
+    private OcrResult tryDocumentFallback(
+            BufferedImage originalImage,
+            List<OcrWord> primaryWords
+    ) {
+
+        Rectangle roi =
+                resolveDenseTextRoi(
+                        originalImage,
+                        primaryWords
+                );
+
+
+        if (roi == null) {
+
+            log.info(
+                    "OCR document fallback skipped. denseTextRoiFound=false"
+            );
+
+            return null;
+        }
+
+
+        log.info(
+                "OCR dense document ROI resolved. x={}, y={}, width={}, height={}",
+                roi.x,
+                roi.y,
+                roi.width,
+                roi.height
+        );
+
+
+        OcrResult result =
+                recognizeDocumentRegion(
+                        originalImage,
+                        roi
+                );
+
+
+        if (result == null) {
+            return null;
+        }
+
+
+        log.info(
+                "OCR dense document fallback completed. wordCount={}, score={}",
+                result.words().size(),
+                calculateOcrQuality(
+                        result.words()
+                )
+        );
+
+
+        return result;
+    }
+
+    private Rectangle resolveDenseTextRoi(
+            BufferedImage image,
+            List<OcrWord> words
+    ) {
+
+        if (
+                words == null
+                        ||
+                        words.isEmpty()
+        ) {
+
+            return null;
+        }
+
+
+        /*
+         * 먼저 confidence 50 이상만 사용한다.
+         * 너무 적으면 30 이상까지 완화한다.
+         */
+        List<OcrWord> reliableWords =
+                words.stream()
+
+                        .filter(
+                                word ->
+                                        word.confidence() >= 50
+                        )
+
+                        .toList();
+
+
+        if (reliableWords.size() < 4) {
+
+            reliableWords =
+                    words.stream()
+
+                            .filter(
+                                    word ->
+                                            word.confidence() >= 30
+                            )
+
+                            .toList();
+        }
+
+
+        if (reliableWords.size() < 3) {
+            return null;
+        }
+
+
+        int searchWidth =
+                (int) Math.round(
+                        image.getWidth() * 0.55
+                );
+
+        int searchHeight =
+                (int) Math.round(
+                        image.getHeight() * 0.45
+                );
+
+
+        OcrWord bestAnchor =
+                null;
+
+        int bestCount =
+                0;
+
+
+        /*
+         * 각 OCR Word 주변에 가상의 창을 놓고
+         * 가장 많은 신뢰 가능한 Word가 모이는 위치를 찾는다.
+         */
+        for (OcrWord anchor : reliableWords) {
+
+            int centerX =
+                    anchor.x()
+                            + anchor.width() / 2;
+
+            int centerY =
+                    anchor.y()
+                            + anchor.height() / 2;
+
+
+            int count =
+                    0;
+
+
+            for (OcrWord candidate : reliableWords) {
+
+                int candidateX =
+                        candidate.x()
+                                + candidate.width() / 2;
+
+                int candidateY =
+                        candidate.y()
+                                + candidate.height() / 2;
+
+
+                if (
+                        Math.abs(candidateX - centerX)
+                                <= searchWidth / 2
+                                &&
+                                Math.abs(candidateY - centerY)
+                                        <= searchHeight / 2
+                ) {
+
+                    count++;
+                }
+            }
+
+
+            if (count > bestCount) {
+
+                bestCount =
+                        count;
+
+                bestAnchor =
+                        anchor;
+            }
+        }
+
+
+        if (
+                bestAnchor == null
+                        ||
+                        bestCount < 3
+        ) {
+
+            return null;
+        }
+
+
+        int bestCenterX =
+                bestAnchor.x()
+                        + bestAnchor.width() / 2;
+
+        int bestCenterY =
+                bestAnchor.y()
+                        + bestAnchor.height() / 2;
+
+
+        final int centerX =
+                bestCenterX;
+
+        final int centerY =
+                bestCenterY;
+
+
+        List<OcrWord> cluster =
+                reliableWords.stream()
+
+                        .filter(word -> {
+
+                            int x =
+                                    word.x()
+                                            + word.width() / 2;
+
+                            int y =
+                                    word.y()
+                                            + word.height() / 2;
+
+
+                            return Math.abs(x - centerX)
+                                    <= searchWidth / 2
+                                    &&
+                                    Math.abs(y - centerY)
+                                            <= searchHeight / 2;
+                        })
+
+                        .toList();
+
+
+        int minX =
+                cluster.stream()
+                        .mapToInt(OcrWord::x)
+                        .min()
+                        .orElse(0);
+
+        int minY =
+                cluster.stream()
+                        .mapToInt(OcrWord::y)
+                        .min()
+                        .orElse(0);
+
+
+        int maxX =
+                cluster.stream()
+
+                        .mapToInt(
+                                word ->
+                                        word.x()
+                                                + word.width()
+                        )
+
+                        .max()
+                        .orElse(
+                                image.getWidth()
+                        );
+
+
+        int maxY =
+                cluster.stream()
+
+                        .mapToInt(
+                                word ->
+                                        word.y()
+                                                + word.height()
+                        )
+
+                        .max()
+                        .orElse(
+                                image.getHeight()
+                        );
+
+
+        int contentWidth =
+                Math.max(
+                        1,
+                        maxX - minX
+                );
+
+        int contentHeight =
+                Math.max(
+                        1,
+                        maxY - minY
+                );
+
+
+        /*
+         * 이미 읽힌 글자 주변을 넉넉하게 확장한다.
+         * 글자를 못 읽은 이름/번호도 crop 안에 포함시키기 위함.
+         */
+        int marginX =
+                Math.max(
+                        120,
+                        (int) Math.round(
+                                contentWidth * 0.45
+                        )
+                );
+
+        int marginY =
+                Math.max(
+                        120,
+                        (int) Math.round(
+                                contentHeight * 0.60
+                        )
+                );
+
+
+        int x =
+                Math.max(
+                        0,
+                        minX - marginX
+                );
+
+        int y =
+                Math.max(
+                        0,
+                        minY - marginY
+                );
+
+
+        int right =
+                Math.min(
+                        image.getWidth(),
+                        maxX + marginX
+                );
+
+        int bottom =
+                Math.min(
+                        image.getHeight(),
+                        maxY + marginY
+                );
+
+
+        return new Rectangle(
+                x,
+                y,
+                right - x,
+                bottom - y
+        );
+    }
+
+    private OcrResult recognizeDocumentRegion(
+            BufferedImage originalImage,
+            Rectangle roi
+    ) {
+
+        OcrResult sparseResult =
+                recognizeDocumentRegion(
+                        originalImage,
+                        roi,
+                        DOCUMENT_PSM
+                );
+
+
+        if (
+                sparseResult != null
+                        &&
+                        !isLowQuality(
+                                sparseResult
+                        )
+        ) {
+
+            log.info(
+                    "Document OCR PSM 11 accepted. wordCount={}",
+                    sparseResult.words().size()
+            );
+
+            return sparseResult;
+        }
+
+
+        log.info(
+                "Document OCR PSM 11 quality insufficient. retrying with PSM 6"
+        );
+
+
+        OcrResult blockResult =
+                recognizeDocumentRegion(
+                        originalImage,
+                        roi,
+                        6
+                );
+
+
+        if (sparseResult == null) {
+            return blockResult;
+        }
+
+
+        if (blockResult == null) {
+            return sparseResult;
+        }
+
+
+        double sparseScore =
+                calculateOcrQuality(
+                        sparseResult.words()
+                );
+
+        double blockScore =
+                calculateOcrQuality(
+                        blockResult.words()
+                );
+
+
+        log.info(
+                "Document OCR comparison. psm11Score={}, psm6Score={}",
+                sparseScore,
+                blockScore
+        );
+
+
+        return blockScore > sparseScore
+                ? blockResult
+                : sparseResult;
+    }
+
+    private OcrResult recognizeDocumentRegion(
+            BufferedImage originalImage,
+            Rectangle roi,
+            int pageSegMode
+    ) {
+
+        try {
+
+            BufferedImage croppedImage =
+                    originalImage.getSubimage(
+                            roi.x,
+                            roi.y,
+                            roi.width,
+                            roi.height
+                    );
+
+
+            double scaleRatio =
+                    resolveDocumentScaleRatio(
+                            croppedImage
+                    );
+
+
+            BufferedImage processedImage =
+                    preprocess(
+                            croppedImage,
+                            scaleRatio
+                    );
+
+
+            ITesseract tesseract =
+                    createTesseract(
+                            pageSegMode
+                    );
+
+
+            long startTime =
+                    System.nanoTime();
+
+
+            List<Word> tessWords =
+                    tesseract.getWords(
+                            processedImage,
+                            ITessAPI.TessPageIteratorLevel.RIL_WORD
+                    );
+
+
+            long durationMs =
+                    (System.nanoTime() - startTime)
+                            / 1_000_000;
+
+
+            List<Word> validWords =
+                    tessWords.stream()
+
+                            .filter(
+                                    word ->
+                                            word.getText() != null
+                                                    &&
+                                                    !word.getText().isBlank()
+                            )
+
+                            .toList();
+
+
+            String text =
+                    buildTextFromWords(
+                            validWords
+                    );
+
+
+            List<OcrWord> words =
+                    validWords.stream()
+
+                            .map(word -> {
+
+                                Rectangle box =
+                                        word.getBoundingBox();
+
+
+                                return new OcrWord(
+
+                                        word.getText(),
+
+                                        word.getConfidence(),
+
+                                        roi.x
+                                                +
+                                                (int) Math.round(
+                                                        box.x
+                                                                / scaleRatio
+                                                ),
+
+                                        roi.y
+                                                +
+                                                (int) Math.round(
+                                                        box.y
+                                                                / scaleRatio
+                                                ),
+
+                                        (int) Math.round(
+                                                box.width
+                                                        / scaleRatio
+                                        ),
+
+                                        (int) Math.round(
+                                                box.height
+                                                        / scaleRatio
+                                        )
+                                );
+                            })
+
+                            .toList();
+
+
+            log.info(
+                    "Document OCR pass completed. psm={}, rawWordCount={}, validWordCount={}, durationMs={}",
+                    pageSegMode,
+                    tessWords.size(),
+                    words.size(),
+                    durationMs
+            );
+
+
+            return new OcrResult(
+                    text,
+                    words
+            );
+
+
+        } catch (Exception e) {
+
+            log.warn(
+                    "OCR document region failed. psm={}",
+                    pageSegMode,
+                    e
+            );
+
+            return null;
+        }
+    }
+
+    public boolean isLowQuality(
+            OcrResult result
+    ) {
+
+        if (
+                result == null
+                        ||
+                        result.words() == null
+                        ||
+                        result.words().isEmpty()
+        ) {
+
+            return true;
+        }
+
+
+        long confidence70 =
+                result.words()
+                        .stream()
+
+                        .filter(
+                                word ->
+                                        word.confidence() >= 70
+                        )
+
+                        .count();
+
+
+        double highConfidenceRatio =
+                (double) confidence70
+                        / result.words().size();
+
+
+        return result.words().size()
+                < DOCUMENT_FALLBACK_MIN_WORDS
+                ||
+                highConfidenceRatio
+                        < DOCUMENT_FALLBACK_MIN_HIGH_CONFIDENCE_RATIO;
+    }
+
+    private double calculateOcrQuality(
+            List<OcrWord> words
+    ) {
+
+        if (
+                words == null
+                        ||
+                        words.isEmpty()
+        ) {
+
+            return 0.0;
+        }
+
+
+        long confidence50 =
+                words.stream()
+
+                        .filter(
+                                word ->
+                                        word.confidence() >= 50
+                        )
+
+                        .count();
+
+
+        long confidence70 =
+                words.stream()
+
+                        .filter(
+                                word ->
+                                        word.confidence() >= 70
+                        )
+
+                        .count();
+
+
+        double averageConfidence =
+                words.stream()
+
+                        .mapToDouble(
+                                OcrWord::confidence
+                        )
+
+                        .average()
+                        .orElse(0.0);
+
+
+        double confidence50Ratio =
+                (double) confidence50
+                        / words.size();
+
+        double confidence70Ratio =
+                (double) confidence70
+                        / words.size();
+
+
+        /*
+         * 무작정 많은 단어보다
+         * 신뢰도 높은 단어 비율을 훨씬 중요하게 평가한다.
+         */
+        return averageConfidence
+                +
+                confidence50Ratio * 40.0
+                +
+                confidence70Ratio * 60.0
+                +
+                Math.min(
+                        words.size(),
+                        40
+                ) * 0.5;
+    }
+
+    private double resolveDocumentScaleRatio(
+            BufferedImage image
+    ) {
+
+        int maxDimension =
+                Math.max(
+                        image.getWidth(),
+                        image.getHeight()
+                );
+
+
+        if (maxDimension <= 0) {
+            return 1.0;
+        }
+
+
+        double ratio =
+                (double) DOCUMENT_TARGET_DIMENSION
+                        / maxDimension;
+
+
+        return Math.max(
+                0.5,
+                Math.min(
+                        3.0,
+                        ratio
+                )
+        );
     }
 
     private String buildTextFromWords(
@@ -431,6 +1309,39 @@ public class OcrService {
         tesseract.setPageSegMode(
                 ocrProperties.getPageSegMode()
         );
+
+        return tesseract;
+    }
+
+    private ITesseract createTesseract(
+            int pageSegMode
+    ) {
+
+        ITesseract tesseract =
+                new Tesseract();
+
+
+        tesseract.setDatapath(
+                ocrProperties.getDatapath()
+        );
+
+        tesseract.setLanguage(
+                ocrProperties.getLanguage()
+        );
+
+
+        tesseract.setVariable(
+                "user_defined_dpi",
+                String.valueOf(
+                        ocrProperties.getDpi()
+                )
+        );
+
+
+        tesseract.setPageSegMode(
+                pageSegMode
+        );
+
 
         return tesseract;
     }

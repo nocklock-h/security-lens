@@ -23,6 +23,11 @@ import com.nocklock.securitylens.dto.OcrResult;
 import com.nocklock.securitylens.dto.AiPiiDetectionResult;
 import com.nocklock.securitylens.domain.PiiType;
 
+import com.nocklock.securitylens.analyzer.DocumentVisionAnalyzer;
+import com.nocklock.securitylens.dto.DocumentVisionResult;
+
+import com.nocklock.securitylens.dto.DocumentFieldResult;
+
 @Service
 public class ImageAnalysisService {
 
@@ -39,12 +44,14 @@ public class ImageAnalysisService {
     private final RiskScoreCalculator riskScoreCalculator;
 
     private final BoundingBoxResolver boundingBoxResolver;
+    private final DocumentVisionAnalyzer documentVisionAnalyzer;
 
     public ImageAnalysisService(
             ImageMetadataService imageMetadataService,
             OcrService ocrService,
             PiiAnalyzer piiAnalyzer,
             AiPiiAnalyzer aiPiiAnalyzer,
+            DocumentVisionAnalyzer documentVisionAnalyzer,
             RiskScoreCalculator riskScoreCalculator,
             BoundingBoxResolver boundingBoxResolver,
             MessageSource messageSource
@@ -53,6 +60,7 @@ public class ImageAnalysisService {
         this.ocrService = ocrService;
         this.piiAnalyzer = piiAnalyzer;
         this.aiPiiAnalyzer = aiPiiAnalyzer;
+        this.documentVisionAnalyzer = documentVisionAnalyzer;
         this.riskScoreCalculator = riskScoreCalculator;
         this.boundingBoxResolver = boundingBoxResolver;
         this.messageSource = messageSource;
@@ -164,6 +172,10 @@ public class ImageAnalysisService {
                 aiResult.detectedItems()
         );
 
+        //AI 검증 필요여부
+        boolean needsDocumentVision =
+                detectedItems.isEmpty();
+
         //시간측정
         long aiDurationMs =
                 (System.nanoTime() - aiStartTime) / 1_000_000;
@@ -179,6 +191,102 @@ public class ImageAnalysisService {
                         ocrResult.words(),
                         aiResult.wordIdsById()
                 );
+        if (needsDocumentVision) {
+
+            long documentVisionStart =
+                    System.nanoTime();
+
+
+            log.info(
+                    "STEP 8 - document vision fallback started"
+            );
+
+
+            DocumentVisionResult documentResult =
+                    documentVisionAnalyzer.analyze(
+                            image
+                    );
+
+
+            if (
+                    documentResult.detected()
+                            &&
+                            documentResult.boundingBox() != null
+            ) {
+
+                int documentFieldIndex =
+                        1;
+
+
+                for (
+                        DocumentFieldResult field
+                        : documentResult.fields()
+                ) {
+
+                    PiiType piiType;
+
+
+                    try {
+
+                        piiType =
+                                PiiType.valueOf(
+                                        field.type()
+                                );
+
+                    } catch (IllegalArgumentException e) {
+
+                        continue;
+                    }
+
+
+                    detectedItems.add(
+                            new DetectedItem(
+                                    "document-field-"
+                                            + documentFieldIndex++,
+
+                                    piiType,
+
+                                    createDocumentFieldMaskedValue(
+                                            piiType
+                                    ),
+
+                                    field.confidence(),
+
+                                    field.boundingBox()
+                            )
+                    );
+                }
+
+
+                log.info(
+                        "Document field detection completed. type={}, fieldCount={}",
+                        documentResult.documentType(),
+                        documentResult.fields().size()
+                );
+
+
+                /*
+                 * 문서 자체도 별도 항목으로 유지한다.
+                 * 세부 field가 실패해도 문서 전체 보호 가능.
+                 */
+                detectedItems.add(
+                        new DetectedItem(
+                                "document-vision-1",
+                                PiiType.SENSITIVE_DOCUMENT,
+                                documentResult.documentType(),
+                                documentResult.confidence(),
+                                documentResult.boundingBox()
+                        )
+                );
+            }
+
+
+            log.info(
+                    "Document vision analysis completed. durationMs={}",
+                    (System.nanoTime() - documentVisionStart)
+                            / 1_000_000
+            );
+        }
 
         detectedItems.forEach(item ->
                 log.debug(
@@ -222,6 +330,29 @@ public class ImageAnalysisService {
                 List.of(),
                 createSummary(riskLevel)
         );
+    }
+
+    private String createDocumentFieldMaskedValue(
+            PiiType type
+    ) {
+
+        return switch (type) {
+
+            case PERSON_NAME ->
+                    "NAME_DETECTED";
+
+            case RRN ->
+                    "RRN_DETECTED";
+
+            case DRIVER_LICENSE_NUMBER ->
+                    "DRIVER_LICENSE_NUMBER_DETECTED";
+
+            case ADDRESS ->
+                    "ADDRESS_DETECTED";
+
+            default ->
+                    "DETECTED";
+        };
     }
 
     private String normalizeOcrText(String text) {

@@ -90,8 +90,35 @@ public class UiMessageController {
             "ui.empty.visible",
             "ui.empty.metadata",
 
+            "ui.empty.visible",
+            "ui.empty.metadata",
+
             "ui.error.imageOnly",
-            "ui.error.analysis"
+            "ui.error.analysis",
+
+            "ui.result.readyToProtect",
+            "ui.result.nothingToProtect",
+            "ui.result.downloadProtected",
+            "ui.result.protected",
+            "ui.protect.previewAlt",
+
+            "ui.result.protectThis",
+            "ui.result.selectProtection",
+
+            "ui.pii.detected.personName",
+            "ui.pii.detected.address",
+            "ui.pii.detected",
+
+            "ui.boundingBox.rrn",
+            "ui.boundingBox.driver_license_number",
+            "ui.boundingBox.address",
+            "ui.boundingBox.person_name",
+            "ui.boundingBox.name",
+            "ui.boundingBox.phone",
+            "ui.boundingBox.phone_number",
+            "ui.boundingBox.email",
+            "ui.boundingBox.face",
+            "ui.boundingBox.face_image"
     );
 
 
