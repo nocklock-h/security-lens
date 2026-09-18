@@ -2,7 +2,10 @@
 // Security Lens Frontend
 // ============================================================
 
-const API_URL = "/api/v1/images/analyze";
+const FAST_API_URL = "/api/v1/images/analyze/fast";
+
+const DEEP_API_URL = "/api/v1/images/analyze/deep";
+
 const UI_MESSAGE_URL = "/api/v1/ui/messages";
 
 
@@ -19,6 +22,8 @@ let protectedPreviewUrl = null;
 
 let messages = {};
 let currentLanguage = "en";
+
+let analysisRequestId = 0;
 
 
 // ============================================================
@@ -349,22 +354,62 @@ dropZone.addEventListener(
 
 function selectFile(file) {
 
-    const validMimeType =
-        file.type?.startsWith("image/");
+    const extensionMatch =
+        file.name
+            ?.toLowerCase()
+            .match(/\.(jpg|jpeg|png)$/);
 
 
     const validExtension =
-        /\.(jpe?g|png)$/i.test(
-            file.name
+        Boolean(extensionMatch);
+
+
+    const allowedMimeTypes =
+        new Set([
+            "image/jpeg",
+            "image/png"
+        ]);
+
+
+    /*
+     * 일부 환경에서는 file.type이 비어 있을 수 있으므로
+     * MIME이 제공된 경우에만 형식을 엄격하게 확인한다.
+     * 실제 보안 검증은 Backend가 담당한다.
+     */
+    const validMimeType =
+        !file.type ||
+        allowedMimeTypes.has(
+            file.type.toLowerCase()
         );
 
 
-    if (!validMimeType && !validExtension) {
+    const validSize =
+        file.size <=
+        30 * 1024 * 1024;
+
+
+    if (
+        !validExtension ||
+        !validMimeType
+    ) {
 
         showError(
             t(
-                "ui.error.imageOnly",
-                "Only image files can be uploaded."
+                "ui.error.unsupportedImage",
+                "Only JPG, JPEG, and PNG image files are supported."
+            )
+        );
+
+        return;
+    }
+
+
+    if (!validSize) {
+
+        showError(
+            t(
+                "ui.error.imageTooLarge",
+                "Image files must be 30 MB or smaller."
             )
         );
 
@@ -391,10 +436,25 @@ function selectFile(file) {
         previewUrl;
 
 
+    previewUrl =
+        URL.createObjectURL(file);
+
+
+    previewImage.src =
+        previewUrl;
+
+
+    const previewAlt =
+        t(
+            "ui.preview.imageAlt",
+            "Image selected for privacy analysis"
+        );
+
+
     previewImage.alt =
         file.name
-            ? `${file.name} - privacy analysis image`
-            : "Image selected for privacy analysis";
+            ? `${file.name} - ${previewAlt}`
+            : previewAlt;
 
 
     fileName.textContent =
@@ -433,6 +493,10 @@ async function analyzeImage() {
     }
 
 
+    const requestId =
+        ++analysisRequestId;
+
+
     showOnly(
         loadingSection
     );
@@ -441,152 +505,52 @@ async function analyzeImage() {
     startLoadingAnimation();
 
 
-    const formData =
-        new FormData();
-
-
-    /*
-        Spring Boot Controller:
-
-        @RequestPart("image")
-        MultipartFile image
-    */
-    formData.append(
-        "image",
-        selectedFile
-    );
-
-
     try {
 
-        const response =
-            await fetch(
-                API_URL,
-                {
-                    method: "POST",
+        /*
+         * ==========================================
+         * 1. FAST SCAN
+         * ==========================================
+         */
 
-                    headers: {
-                        "Accept-Language":
-                        currentLanguage
-                    },
-
-                    body: formData
-                }
+        const fastData =
+            await requestImageAnalysis(
+                FAST_API_URL
             );
 
 
-        if (!response.ok) {
-
-            let message =
-                `${t(
-                    "ui.error.analysis",
-                    "An error occurred while analyzing this image."
-                )} (${response.status})`;
-
-
-            try {
-
-                const errorData =
-                    await response.json();
-
-
-                if (
-                    errorData &&
-                    errorData.message
-                ) {
-
-                    message =
-                        errorData.message;
-                }
-
-            } catch (_) {
-
-                // JSON 오류 응답이 아니어도
-                // 기본 오류 메시지를 사용한다.
-            }
-
-
-            throw new Error(
-                message
-            );
+        /*
+         * 사용자가 분석 도중 새 이미지로 넘어갔다면
+         * 이전 요청 결과를 버린다.
+         */
+        if (
+            requestId !==
+            analysisRequestId
+        ) {
+            return;
         }
 
-
-        const data =
-            await response.json();
 
         latestAnalysis =
-            data;
-
-
-        const protectableItems =
-            Array.isArray(data.detectedItems)
-                ? data.detectedItems.filter(item => {
-
-                    if (isDocumentType(item)) {
-                        return false;
-                    }
-
-
-                    const box =
-                        item.boundingBox;
-
-
-                    return (
-                        box &&
-                        box.width > 0 &&
-                        box.height > 0
-                    );
-                })
-                : [];
-
-
-        const canProtect =
-            protectableItems.length > 0;
-
-
-        protectButton.disabled =
-            !canProtect;
-
-
-        protectButton.setAttribute(
-            "aria-disabled",
-            String(!canProtect)
-        );
-
-
-        if (protectStatus) {
-
-            protectStatus.textContent =
-                canProtect
-                    ? t(
-                        "ui.result.readyToProtect",
-                        "Ready"
-                    )
-                    : t(
-                        "ui.result.nothingToProtect",
-                        "No protectable area"
-                    );
-        }
-
-        console.log(
-            "Security Lens Analysis Result:",
-            data
-        );
+            fastData;
 
 
         stopLoadingAnimation();
 
 
+        updateProtectionAvailability(
+            fastData
+        );
+
+
         renderAnalysis(
-            data
+            fastData
         );
 
 
         /*
-            먼저 hidden을 제거한 뒤 focus를 이동해야
-            키보드 / Screen Reader에서 정상 동작한다.
-        */
+         * FAST가 끝나는 즉시 결과 화면을 보여준다.
+         */
         showOnly(
             resultSection
         );
@@ -597,13 +561,31 @@ async function analyzeImage() {
 
                 syncOverlayToImage();
 
+
                 renderBoundingBoxes(
-                    data.detectedItems || [],
-                    data.image
+                    fastData.detectedItems || [],
+                    fastData.image
                 );
+
 
                 resultSection.focus();
             }
+        );
+
+
+        showDeepAnalysisPending();
+
+
+        /*
+         * ==========================================
+         * 2. DEEP AI
+         * ==========================================
+         *
+         * await 하지 않는다.
+         * FAST 화면은 이미 사용자에게 표시된다.
+         */
+        void runDeepAnalysis(
+            requestId
         );
 
 
@@ -628,9 +610,350 @@ async function analyzeImage() {
 }
 
 
+async function runDeepAnalysis(
+    requestId
+) {
+
+    try {
+
+        const deepData =
+            await requestImageAnalysis(
+                DEEP_API_URL
+            );
+
+
+        /*
+         * 다른 사진 분석이 시작되었다면
+         * 늦게 도착한 이전 결과는 무시한다.
+         */
+        if (
+            requestId !==
+            analysisRequestId
+        ) {
+            return;
+        }
+
+        stopRiskAnalyzingAnimation();
+
+        latestAnalysis =
+            deepData;
+
+
+        updateProtectionAvailability(
+            deepData
+        );
+
+
+        /*
+         * AI 결과로 화면 전체를 자연스럽게 갱신한다.
+         */
+        renderAnalysis(
+            deepData
+        );
+
+
+        requestAnimationFrame(
+            () => {
+
+                syncOverlayToImage();
+
+
+                renderBoundingBoxes(
+                    deepData.detectedItems || [],
+                    deepData.image
+                );
+            }
+        );
+
+
+        console.log(
+            "Security Lens Deep AI completed.",
+            deepData
+        );
+
+
+    } catch (error) {
+
+        console.error(
+            "Security Lens Deep AI failed.",
+            error
+        );
+
+
+        /*
+         * Deep AI가 실패해도
+         * 이미 나온 FAST 결과는 없애지 않는다.
+         */
+        if (
+            requestId !==
+            analysisRequestId
+        ) {
+            return;
+        }
+
+
+        showDeepAnalysisFailed();
+    }
+}
+
+
+async function requestImageAnalysis(
+    url
+) {
+
+    const formData =
+        new FormData();
+
+
+    formData.append(
+        "image",
+        selectedFile
+    );
+
+
+    const response =
+        await fetch(
+            url,
+            {
+                method: "POST",
+
+                headers: {
+                    "Accept-Language":
+                    currentLanguage
+                },
+
+                body:
+                formData
+            }
+        );
+
+
+    if (!response.ok) {
+
+        let message =
+            `${t(
+                "ui.error.analysis",
+                "An error occurred while analyzing this image."
+            )} (${response.status})`;
+
+
+        try {
+
+            const errorData =
+                await response.json();
+
+
+            if (
+                errorData &&
+                errorData.message
+            ) {
+
+                message =
+                    errorData.message;
+            }
+
+        } catch (_) {
+
+            /*
+             * JSON 오류 응답이 아니면
+             * 기본 메시지를 유지한다.
+             */
+        }
+
+
+        throw new Error(
+            message
+        );
+    }
+
+
+    return await response.json();
+}
+
+
+function updateProtectionAvailability(
+    data
+) {
+
+    const protectableItems =
+        Array.isArray(
+            data.detectedItems
+        )
+            ? data.detectedItems
+                .filter(item => {
+
+                    if (
+                        isDocumentType(
+                            item
+                        )
+                    ) {
+
+                        return false;
+                    }
+
+
+                    const box =
+                        item.boundingBox;
+
+
+                    return Boolean(
+                        box &&
+                        box.width > 0 &&
+                        box.height > 0
+                    );
+                })
+            : [];
+
+
+    const canProtect =
+        protectableItems.length > 0;
+
+
+    protectButton.disabled =
+        !canProtect;
+
+
+    protectButton.setAttribute(
+        "aria-disabled",
+        String(
+            !canProtect
+        )
+    );
+
+
+    if (protectStatus) {
+
+        protectStatus.textContent =
+            canProtect
+                ? t(
+                    "ui.result.readyToProtect",
+                    "Ready"
+                )
+                : t(
+                    "ui.result.nothingToProtect",
+                    "No protectable area"
+                );
+    }
+}
+
+
+function showDeepAnalysisPending() {
+
+    const items =
+        Array.isArray(latestAnalysis?.detectedItems)
+            ? latestAnalysis.detectedItems
+            : [];
+
+
+    if (items.length === 0) {
+
+        startRiskAnalyzingAnimation();
+
+
+        riskLevel.textContent =
+            t(
+                "ui.deep.analyzing",
+                "Analyzing"
+            );
+
+
+        riskDescription.textContent =
+            t(
+                "ui.deep.pendingDescription",
+                "Fast scan complete. Waiting for the deep AI analysis."
+            );
+
+
+        visibleCount.textContent =
+            "…";
+
+
+        detectedItems.innerHTML = `
+            <div class="empty-result">
+                ${escapeHtml(
+            t(
+                "ui.deep.pendingExposure",
+                "AI is analyzing the document context and privacy exposure areas."
+            )
+        )}
+            </div>
+        `;
+    }
+
+
+    aiContext.textContent =
+        t(
+            "ui.deep.pendingContext",
+            "Fast scan complete · Deep AI analysis in progress"
+        );
+
+
+    aiSummary.textContent =
+        t(
+            "ui.deep.pendingSummary",
+            "These are preliminary results. AI is checking the document type and privacy exposure areas."
+        );
+}
+
+
+function showDeepAnalysisFailed() {
+
+    stopRiskAnalyzingAnimation();
+
+
+    if (latestAnalysis) {
+
+        renderAnalysis(
+            latestAnalysis
+        );
+    }
+
+
+    aiContext.textContent =
+        t(
+            "ui.deep.failedContext",
+            "Fast scan complete · Deep AI analysis failed"
+        );
+
+
+    aiSummary.textContent =
+        t(
+            "ui.deep.failedSummary",
+            "Deep AI analysis could not be completed. The fast scan result remains available."
+        );
+}
+
+
 // ============================================================
 // ANALYSIS RENDER
 // ============================================================
+
+function startRiskAnalyzingAnimation() {
+    if (riskCircle) {
+        riskCircle.classList.add("is-analyzing");
+    }
+
+    if (riskScore) {
+        riskScore.innerHTML = `
+            <span class="loading-dots" aria-label="${escapeHtml(
+            t(
+                "ui.deep.analyzing",
+                "Analyzing"
+            )
+        )}">
+                <span></span>
+                <span></span>
+                <span></span>
+            </span>
+        `;
+    }
+}
+
+function stopRiskAnalyzingAnimation() {
+    if (riskCircle) {
+        riskCircle.classList.remove("is-analyzing");
+    }
+}
 
 function renderAnalysis(data) {
 
@@ -907,32 +1230,30 @@ function renderDocumentType(items) {
         기존 i18n API에 새 키를 추가하지 않아도
         한국어 / 영어가 자연스럽게 보이도록 처리.
     */
-    const isKorean =
-        currentLanguage === "ko";
-
 
     documentTypeTitle.textContent =
-        isKorean
-            ? "문서 유형"
-            : "Document Type";
-
+        t(
+            "ui.document.title",
+            "Document Type"
+        );
 
     documentTypeHeading.textContent =
-        isKorean
-            ? "문서 유형"
-            : "Document Type";
-
+        t(
+            "ui.document.title",
+            "Document Type"
+        );
 
     documentTypeDescription.textContent =
-        isKorean
-            ? "이미지 전체 맥락에서 인식된 문서입니다."
-            : "Document context recognized from the image.";
-
+        t(
+            "ui.document.description",
+            "Document context recognized from the image."
+        );
 
     documentTypeLabel.textContent =
-        isKorean
-            ? "인식된 문서"
-            : "Recognized document";
+        t(
+            "ui.document.recognized",
+            "Recognized document"
+        );
 
 
     /*
@@ -1112,12 +1433,27 @@ function renderMetadata(metadata) {
 
         count++;
 
-
+        /* TODO 좌표를 지도로
         appendMetadataItem(
-            "GPS LOCATION",
+            t(
+                "ui.metadata.location",
+                "GPS Location"
+            ),
             formatCoordinates(
                 metadata.gps.latitude,
                 metadata.gps.longitude
+            )
+        );
+        */
+
+        appendMetadataItem(
+            t(
+                "ui.metadata.location",
+                "Location Information"
+            ),
+            t(
+                "ui.metadata.locationDetected",
+                "Location data is embedded in this image."
             )
         );
     }
@@ -1130,7 +1466,10 @@ function renderMetadata(metadata) {
 
 
         appendMetadataItem(
-            "CAPTURED AT",
+            t(
+                "ui.metadata.capturedAt",
+                "Captured At"
+            ),
             formatCapturedAt(
                 metadata.capturedAt
             )
@@ -1157,9 +1496,15 @@ function renderMetadata(metadata) {
 
 
         appendMetadataItem(
-            "DEVICE",
+            t(
+                "ui.metadata.device",
+                "Device"
+            ),
             deviceName ||
-            "Device information detected"
+            t(
+                "ui.metadata.deviceDetected",
+                "Device information detected"
+            )
         );
     }
 
@@ -1303,9 +1648,10 @@ function renderAiContext(data) {
     ) {
 
         signals.push(
-            currentLanguage === "ko"
-                ? "위치 메타데이터"
-                : "Location Metadata"
+            t(
+                "ui.ai.locationMetadata",
+                "Location Metadata"
+            )
         );
     }
 
@@ -1315,9 +1661,10 @@ function renderAiContext(data) {
     ) {
 
         signals.push(
-            currentLanguage === "ko"
-                ? "기기 정보"
-                : "Device Information"
+            t(
+                "ui.ai.deviceInformation",
+                "Device Information"
+            )
         );
     }
 
@@ -1325,9 +1672,10 @@ function renderAiContext(data) {
     if (metadata?.capturedAt) {
 
         signals.push(
-            currentLanguage === "ko"
-                ? "촬영 시간"
-                : "Capture Time"
+            t(
+                "ui.ai.captureTime",
+                "Capture Time"
+            )
         );
     }
 
@@ -1335,9 +1683,10 @@ function renderAiContext(data) {
     if (signals.length === 0) {
 
         aiContext.textContent =
-            currentLanguage === "ko"
-                ? "뚜렷한 개인정보 노출 신호가 발견되지 않았습니다."
-                : "No clear privacy exposure signals were detected.";
+            t(
+                "ui.ai.noSignals",
+                "No clear privacy exposure signals were detected."
+            );
 
         return;
     }
@@ -2162,6 +2511,10 @@ function resetApplication() {
 
     stopLoadingAnimation();
 
+    stopRiskAnalyzingAnimation();
+
+    analysisRequestId++;
+
 
     latestAnalysis =
         null;
@@ -2206,8 +2559,15 @@ function resetApplication() {
         "";
 
 
+    const previewAlt =
+        t(
+            "ui.preview.imageAlt",
+            "Image selected for privacy analysis"
+        );
+
+
     previewImage.alt =
-        "Image selected for privacy analysis";
+        previewAlt;
 
 
     showOnly(
@@ -2315,7 +2675,7 @@ function clearAnalysisResult() {
 
         protectStatus.textContent =
             t(
-                "ui.result.readyToProtect",
+                "ui.result.readyAfterAnalysis",
                 "Ready after analysis"
             );
     }
@@ -2444,6 +2804,29 @@ function formatPiiType(type) {
                 "ui.pii.driverLicenseNumber",
                 "Driver License Number"
             );
+
+        case "PASSPORT_NUMBER":
+            return t(
+                "ui.pii.passportNumber",
+                "Passport Number"
+            );
+
+        case "DATE_OF_BIRTH":
+            return t(
+                "ui.pii.dateOfBirth",
+                "Date of Birth"
+            );
+
+            if (
+                type === "SENSITIVE_DOCUMENT" &&
+                item.maskedValue === "PASSPORT"
+            ) {
+
+                return t(
+                    "ui.document.passport",
+                    "Passport"
+                );
+            }
 
         case "SENSITIVE_DOCUMENT":
             return t(
@@ -2590,7 +2973,10 @@ function formatCoordinates(
         !Number.isFinite(lng)
     ) {
 
-        return "Location detected";
+        return t(
+            "ui.metadata.locationDetected",
+            "Location detected"
+        );
     }
 
 
@@ -2601,21 +2987,55 @@ function formatCoordinates(
 function formatCapturedAt(value) {
 
     if (!value) {
-
         return "";
     }
 
 
-    /*
-        EXIF 시간이 ISO가 아닐 수 있으므로
-        강제로 Date 객체로 변환하지 않는다.
-    */
+    const text =
+        String(value)
+            .trim()
+            .replace(
+                "T",
+                " "
+            );
 
-    return String(value)
-        .replace(
-            "T",
-            " "
+
+    /*
+     * EXIF:
+     * 2025:08:06 10:09:13
+     *
+     * ISO 계열:
+     * 2025-08-06 10:09:13
+     */
+    const match =
+        text.match(
+            /^(\d{4})[:-](\d{2})[:-](\d{2})\s+(\d{2}):(\d{2}):(\d{2})/
         );
+
+
+    if (!match) {
+        return text;
+    }
+
+
+    const [
+        ,
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second
+    ] = match;
+
+
+    if (currentLanguage === "ko") {
+
+        return `${year}년 ${Number(month)}월 ${Number(day)}일 ${hour}:${minute}:${second}`;
+    }
+
+
+    return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
 }
 
 

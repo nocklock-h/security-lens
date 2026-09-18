@@ -45,6 +45,7 @@ public class ImageAnalysisService {
 
     private final BoundingBoxResolver boundingBoxResolver;
     private final DocumentVisionAnalyzer documentVisionAnalyzer;
+    private final ImageOrientationNormalizer imageOrientationNormalizer;
 
     public ImageAnalysisService(
             ImageMetadataService imageMetadataService,
@@ -54,6 +55,7 @@ public class ImageAnalysisService {
             DocumentVisionAnalyzer documentVisionAnalyzer,
             RiskScoreCalculator riskScoreCalculator,
             BoundingBoxResolver boundingBoxResolver,
+            ImageOrientationNormalizer imageOrientationNormalizer,
             MessageSource messageSource
     ) {
         this.imageMetadataService = imageMetadataService;
@@ -63,9 +65,118 @@ public class ImageAnalysisService {
         this.documentVisionAnalyzer = documentVisionAnalyzer;
         this.riskScoreCalculator = riskScoreCalculator;
         this.boundingBoxResolver = boundingBoxResolver;
+        this.imageOrientationNormalizer = imageOrientationNormalizer;
         this.messageSource = messageSource;
     }
 
+    public AnalysisResponse analyzeFast(
+            MultipartFile image
+    ) {
+
+        long analysisStartTime =
+                System.nanoTime();
+
+
+        log.info(
+                "FAST STEP 1 - analysis started"
+        );
+
+
+        ImageInfo imageInfo =
+                extractImageInfo(
+                        image
+                );
+
+
+        MetadataResult metadataResult =
+                imageMetadataService.extract(
+                        image
+                );
+
+
+        OcrResult ocrResult =
+                ocrService.analyze(
+                        image
+                );
+
+
+        String normalizedText =
+                normalizeOcrText(
+                        ocrResult.text()
+                );
+
+
+        /*
+         * FAST 분석에서는 외부 AI를 호출하지 않는다.
+         *
+         * Local OCR + Rule 기반 개인정보만 사용한다.
+         */
+        List<DetectedItem> detectedItems =
+                new ArrayList<>(
+                        piiAnalyzer.analyze(
+                                normalizedText
+                        )
+                );
+
+
+        /*
+         * Rule 기반으로 발견한 개인정보를
+         * OCR 좌표와 연결한다.
+         */
+        detectedItems =
+                boundingBoxResolver.attach(
+                        detectedItems,
+                        ocrResult.words()
+                );
+
+
+        int riskScore =
+                riskScoreCalculator.calculate(
+                        detectedItems,
+                        metadataResult
+                );
+
+
+        RiskLevel riskLevel =
+                riskScoreCalculator.determineLevel(
+                        riskScore
+                );
+
+
+        long totalDurationMs =
+                (System.nanoTime()
+                        - analysisStartTime)
+                        / 1_000_000;
+
+
+        log.info(
+                "FAST analysis completed. detectedCount={}, riskScore={}, riskLevel={}, durationMs={}",
+                detectedItems.size(),
+                riskScore,
+                riskLevel,
+                totalDurationMs
+        );
+
+
+        return new AnalysisResponse(
+                riskScore,
+                riskLevel,
+                imageInfo,
+                detectedItems,
+                metadataResult,
+                List.of(),
+                createSummary(
+                        riskLevel
+                )
+        );
+    }
+
+    /*
+     * DEEP 분석
+     *
+     * FAST 이후 실행되는 정밀 분석.
+     * Text AI / Document Vision 포함.
+     */
     public AnalysisResponse analyze(MultipartFile image) {
 
         //전체시간측정
@@ -387,6 +498,12 @@ public class ImageAnalysisService {
             case ADDRESS ->
                     "ADDRESS_DETECTED";
 
+            case PASSPORT_NUMBER ->
+                    "PASSPORT_NUMBER_DETECTED";
+
+            case DATE_OF_BIRTH ->
+                    "DATE_OF_BIRTH_DETECTED";
+
             default ->
                     "DETECTED";
         };
@@ -445,25 +562,41 @@ public class ImageAnalysisService {
         );
     }
 
-    private ImageInfo extractImageInfo(MultipartFile image) {
+    private ImageInfo extractImageInfo(
+            MultipartFile image
+    ) {
+
         try {
+
             BufferedImage bufferedImage =
-                    ImageIO.read(image.getInputStream());
+                    imageOrientationNormalizer
+                            .readNormalized(
+                                    image
+                            );
+
 
             if (bufferedImage == null) {
+
                 throw new IllegalArgumentException(
-                        getMessage("image.info.unavailable")
+                        getMessage(
+                                "image.info.unavailable"
+                        )
                 );
             }
+
 
             return new ImageInfo(
                     bufferedImage.getWidth(),
                     bufferedImage.getHeight()
             );
 
+
         } catch (IOException e) {
+
             throw new IllegalStateException(
-                    getMessage("image.info.read-failed"),
+                    getMessage(
+                            "image.info.read-failed"
+                    ),
                     e
             );
         }

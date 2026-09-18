@@ -45,13 +45,27 @@ public class OcrService {
     private static final int DOCUMENT_PSM = 11;
     private static final int DOCUMENT_TARGET_DIMENSION = 2800;
 
-    public OcrService(OcrProperties ocrProperties) {
-        this.ocrProperties = ocrProperties;
+    private final ImageOrientationNormalizer imageOrientationNormalizer;
+
+    public OcrService(
+            OcrProperties ocrProperties,
+            ImageOrientationNormalizer imageOrientationNormalizer
+    ) {
+
+        this.ocrProperties =
+                ocrProperties;
+
+        this.imageOrientationNormalizer =
+                imageOrientationNormalizer;
     }
 
     public String extractText(MultipartFile image) {
         try {
-            BufferedImage originalImage = ImageIO.read(image.getInputStream());
+            BufferedImage originalImage =
+                    imageOrientationNormalizer
+                            .readNormalized(
+                                    image
+                            );
 
             if (originalImage == null) {
                 throw new OcrException(OcrErrorCode.UNSUPPORTED_IMAGE);

@@ -32,8 +32,14 @@ public class ImageMetadataService {
     private Metadata readMetadata(MultipartFile image) {
         try (InputStream inputStream = image.getInputStream()) {
             return ImageMetadataReader.readMetadata(inputStream);
-        } catch (ImageProcessingException | IOException e) {
-            throw new ImageMetadataAnalysisException("이미지 메타데이터 분석에 실패했습니다.", e);
+        } catch (
+                ImageProcessingException |
+                IOException e
+        ) {
+
+            throw new ImageMetadataAnalysisException(
+                    e
+            );
         }
     }
 

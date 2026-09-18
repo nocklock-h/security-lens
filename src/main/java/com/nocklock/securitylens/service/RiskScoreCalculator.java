@@ -36,6 +36,9 @@ public class RiskScoreCalculator {
     private static final int NAME_PHONE_COMBINATION_SCORE = 10;
     private static final int ADDRESS_GPS_COMBINATION_SCORE = 15;
 
+    private static final int PASSPORT_NUMBER_SCORE = 35;
+    private static final int DATE_OF_BIRTH_SCORE = 20;
+
     public int calculate(
             List<DetectedItem> detectedItems,
             MetadataResult metadata
@@ -105,6 +108,25 @@ public class RiskScoreCalculator {
                 )
         ) {
             score += SENSITIVE_DOCUMENT_SCORE;
+        }
+
+        if (
+                detectedTypes.contains(
+                        PiiType.PASSPORT_NUMBER
+                )
+        ) {
+            score +=
+                    PASSPORT_NUMBER_SCORE;
+        }
+
+
+        if (
+                detectedTypes.contains(
+                        PiiType.DATE_OF_BIRTH
+                )
+        ) {
+            score +=
+                    DATE_OF_BIRTH_SCORE;
         }
 
         if (detectedTypes.contains(PiiType.ACCOUNT_NUMBER)) {

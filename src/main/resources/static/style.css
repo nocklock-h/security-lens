@@ -1493,3 +1493,94 @@ input:focus-visible {
         transition-duration: 0.01ms !important;
     }
 }
+
+/* ===== Deep analysis loading state ===== */
+
+.risk-circle.is-analyzing {
+    position: relative;
+    overflow: hidden;
+}
+
+.risk-circle.is-analyzing::before {
+    content: "";
+    position: absolute;
+    inset: -2px;
+    border-radius: 50%;
+    background: conic-gradient(
+            from 0deg,
+            rgba(79, 209, 197, 0.05),
+            rgba(79, 209, 197, 0.95),
+            rgba(79, 209, 197, 0.05)
+    );
+    animation: riskCircleSpin 1.2s linear infinite;
+    z-index: 0;
+}
+
+.risk-circle.is-analyzing::after {
+    content: "";
+    position: absolute;
+    inset: 8px;
+    border-radius: 50%;
+    background: #0b1220;
+    z-index: 1;
+}
+
+.risk-circle.is-analyzing .risk-score,
+.risk-circle.is-analyzing .risk-total {
+    position: relative;
+    z-index: 2;
+}
+
+.loading-dots {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 36px;
+}
+
+.loading-dots span {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #ffffff;
+    opacity: 0.25;
+    transform: translateY(0);
+    animation: loadingDotBounce 1s infinite ease-in-out;
+}
+
+.loading-dots span:nth-child(2) {
+    animation-delay: 0.15s;
+}
+
+.loading-dots span:nth-child(3) {
+    animation-delay: 0.3s;
+}
+
+@keyframes loadingDotBounce {
+    0%, 80%, 100% {
+        opacity: 0.25;
+        transform: translateY(0);
+    }
+    40% {
+        opacity: 1;
+        transform: translateY(-4px);
+    }
+}
+
+@keyframes riskCircleSpin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* 모션 최소화 환경 대응 */
+@media (prefers-reduced-motion: reduce) {
+    .risk-circle.is-analyzing::before,
+    .loading-dots span {
+        animation: none;
+    }
+}

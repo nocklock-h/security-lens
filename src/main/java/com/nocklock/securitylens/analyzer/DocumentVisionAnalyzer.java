@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.nocklock.securitylens.dto.DocumentFieldResult;
+import com.nocklock.securitylens.service.ImageOrientationNormalizer;
 
 @Component
 public class DocumentVisionAnalyzer {
@@ -32,17 +33,18 @@ public class DocumentVisionAnalyzer {
                     DocumentVisionAnalyzer.class
             );
 
-    private static final int MAX_VISION_DIMENSION =
-            1280;
+    private static final int MAX_VISION_DIMENSION = 1280;
 
     private final AiProperties aiProperties;
     private final JsonMapper jsonMapper;
     private final RestClient restClient;
+    private final ImageOrientationNormalizer imageOrientationNormalizer;
 
 
     public DocumentVisionAnalyzer(
             AiProperties aiProperties,
-            JsonMapper jsonMapper
+            JsonMapper jsonMapper,
+            ImageOrientationNormalizer imageOrientationNormalizer
     ) {
 
         this.aiProperties =
@@ -50,6 +52,9 @@ public class DocumentVisionAnalyzer {
 
         this.jsonMapper =
                 jsonMapper;
+
+        this.imageOrientationNormalizer =
+                imageOrientationNormalizer;
 
 
         SimpleClientHttpRequestFactory requestFactory =
@@ -60,7 +65,7 @@ public class DocumentVisionAnalyzer {
         );
 
         requestFactory.setReadTimeout(
-                15_000
+                30_000
         );
 
 
@@ -88,9 +93,10 @@ public class DocumentVisionAnalyzer {
         try {
 
             BufferedImage original =
-                    ImageIO.read(
-                            image.getInputStream()
-                    );
+                    imageOrientationNormalizer
+                            .readNormalized(
+                                    image
+                            );
 
 
             if (original == null) {
@@ -152,7 +158,7 @@ public class DocumentVisionAnalyzer {
                                                             "image_url",
                                                             dataUrl,
                                                             "detail",
-                                                            "auto"
+                                                            "high"
                                                     )
                                             )
                                     )
@@ -232,9 +238,11 @@ public class DocumentVisionAnalyzer {
 
                             .filter(
                                     field ->
-                                            field.boundingBox() != null
+                                            field.confidence() >= 0.70
                                                     &&
-                                                    field.confidence() >= 0.70
+                                                    isPlausibleFieldBox(
+                                                            field
+                                                    )
                             )
 
                             .map(
@@ -301,6 +309,8 @@ public class DocumentVisionAnalyzer {
             - PERSON_NAME
             - RRN
             - DRIVER_LICENSE_NUMBER
+            - PASSPORT_NUMBER
+            - DATE_OF_BIRTH
             - ADDRESS
 
             규칙:
@@ -339,18 +349,27 @@ public class DocumentVisionAnalyzer {
             
                DRIVER_LICENSE_NUMBER와 RRN은 일반적으로
                PERSON_NAME보다 가로로 긴 영역이다.
-
-            5. 주민등록번호나 운전면허번호가 여러 OCR 조각으로 보이더라도
+               
+            5.PASSPORT를 분석할 때:
+            - PASSPORT_NUMBER는 여권번호 값 자체의 한 줄 영역이다.
+            - PERSON_NAME은 여권에 표시된 이름 값 영역이다.
+            - DATE_OF_BIRTH는 생년월일 값 영역이다.
+            - MRZ 전체를 PASSPORT_NUMBER 영역으로 반환하지 않는다.
+            - 사진 영역을 PERSON_NAME으로 반환하지 않는다.
+            - 개인정보 텍스트 영역은 일반적으로 가로 방향이다.
+            - 폭이 매우 좁고 높이가 긴 세로 막대 형태의 boundingBox는 반환하지 않는다.
+                  
+            6. 주민등록번호나 운전면허번호가 여러 OCR 조각으로 보이더라도
                번호 전체가 포함되도록 하나의 boundingBox를 반환한다.
 
-            6. 주소가 여러 줄이면 주소 전체가 포함되는 하나의 boundingBox를 반환한다.
+            7. 주소가 여러 줄이면 주소 전체가 포함되는 하나의 boundingBox를 반환한다.
 
-            7. 확실하지 않은 필드는 반환하지 않는다.
+            8. 확실하지 않은 필드는 반환하지 않는다.
 
-            8. 모든 좌표는 이미지 전체를 기준으로
+            9. 모든 좌표는 이미지 전체를 기준으로
                0부터 1000 사이의 정규화 좌표를 사용한다.
 
-            9. 문서가 없으면 detected=false,
+            10. 문서가 없으면 detected=false,
                documentType=NONE,
                confidence=0,
                문서 boundingBox는 모두 0,
@@ -358,6 +377,68 @@ public class DocumentVisionAnalyzer {
             """;
     }
 
+    private boolean isPlausibleFieldBox(
+            VisionField field
+    ) {
+
+        if (
+                field == null
+                        ||
+                        field.boundingBox() == null
+        ) {
+            return false;
+        }
+
+
+        VisionBoundingBox box =
+                field.boundingBox();
+
+
+        if (
+                box.width() <= 0
+                        ||
+                        box.height() <= 0
+                        ||
+                        box.x() < 0
+                        ||
+                        box.y() < 0
+                        ||
+                        box.x() + box.width() > 1000
+                        ||
+                        box.y() + box.height() > 1000
+        ) {
+            return false;
+        }
+
+
+        /*
+         * 이름, 번호, 주소 등의 텍스트 필드가
+         * 극단적인 세로 막대 형태로 반환되는 경우 제거한다.
+         *
+         * 주소는 여러 줄일 수 있으므로
+         * 단순히 width > height로 강제하지는 않는다.
+         */
+        boolean plausible =
+                box.height()
+                        <= box.width() * 2.5;
+
+
+        if (!plausible) {
+
+            log.warn(
+                    "Rejected implausible document field box. type={}, confidence={}, x={}, y={}, width={}, height={}",
+                    field.type(),
+                    field.confidence(),
+                    box.x(),
+                    box.y(),
+                    box.width(),
+                    box.height()
+            );
+        }
+
+
+        return plausible;
+    }
 
     private Map<String, Object> createResponseFormat() {
 
@@ -429,6 +510,8 @@ public class DocumentVisionAnalyzer {
                                                 "PERSON_NAME",
                                                 "RRN",
                                                 "DRIVER_LICENSE_NUMBER",
+                                                "PASSPORT_NUMBER",
+                                                "DATE_OF_BIRTH",
                                                 "ADDRESS"
                                         )
                                 ),
