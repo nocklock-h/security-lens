@@ -780,6 +780,21 @@ async function requestImageAnalysis(
     return await response.json();
 }
 
+function hasProtectableMetadata(data) {
+
+    const metadata =
+        data?.metadata;
+
+    if (!metadata) {
+        return false;
+    }
+
+    return Boolean(
+        metadata.gps?.detected ||
+        metadata.capturedAt ||
+        metadata.device?.detected
+    );
+}
 
 function updateProtectionAvailability(
     data
@@ -815,8 +830,12 @@ function updateProtectionAvailability(
             : [];
 
 
+    const hasMetadata =
+        hasProtectableMetadata(data);
+
     const canProtect =
-        protectableItems.length > 0;
+        protectableItems.length > 0 ||
+        hasMetadata;
 
 
     protectButton.disabled =
@@ -2108,7 +2127,15 @@ function protectImage() {
         );
 
 
-    if (selectedItemIds.size === 0) {
+    const hasMetadata =
+        hasProtectableMetadata(
+            latestAnalysis
+        );
+
+    if (
+        selectedItemIds.size === 0 &&
+        !hasMetadata
+    ) {
 
         alert(
             t(
@@ -2119,6 +2146,7 @@ function protectImage() {
 
         return;
     }
+
 
     const width =
         previewImage.naturalWidth;
