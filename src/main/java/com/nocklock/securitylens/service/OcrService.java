@@ -27,6 +27,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.nocklock.securitylens.dto.BoundingBox;
+import java.util.concurrent.Semaphore;
 
 @Service
 public class OcrService {
@@ -38,6 +39,22 @@ public class OcrService {
 
     private static final int MIN_OCR_DIMENSION = 1600;
     private static final int MAX_OCR_DIMENSION = 3000;
+
+    /*
+     * Railway 단일 인스턴스에서 여러 OCR 작업이 동시에 실행되면
+     * BufferedImage 전처리 + Tesseract native 처리로
+     * Heap 사용량이 급증할 수 있다.
+     *
+     * 부하 테스트 결과를 기준으로
+     * 동시에 실행되는 OCR 분석을 2개로 제한한다.
+     */
+    private static final int MAX_CONCURRENT_OCR = 2;
+
+    private final Semaphore ocrSemaphore =
+            new Semaphore(
+                    MAX_CONCURRENT_OCR,
+                    true
+            );
 
     private static final double DOCUMENT_FALLBACK_MIN_HIGH_CONFIDENCE_RATIO = 0.45;
     private static final int DOCUMENT_FALLBACK_MIN_WORDS = 8;
@@ -94,7 +111,18 @@ public class OcrService {
 
     public OcrResult analyze(MultipartFile image) {
 
+        boolean acquired = false;
+
         try {
+
+            ocrSemaphore.acquire();
+
+            acquired = true;
+
+            log.info(
+                    "OCR permit acquired. availablePermits={}",
+                    ocrSemaphore.availablePermits()
+            );
 
             long ocrStartTime =
                     System.nanoTime();
@@ -311,12 +339,36 @@ public class OcrService {
             );
 
 
+        } catch (InterruptedException e) {
+
+            Thread.currentThread()
+                    .interrupt();
+
+            throw new OcrException(
+                    OcrErrorCode.ANALYSIS_FAILED,
+                    e
+            );
+
+
         } catch (IOException e) {
 
             throw new OcrException(
                     OcrErrorCode.ANALYSIS_FAILED,
                     e
             );
+
+
+        } finally {
+
+            if (acquired) {
+
+                ocrSemaphore.release();
+
+                log.info(
+                        "OCR permit released. availablePermits={}",
+                        ocrSemaphore.availablePermits()
+                );
+            }
         }
     }
 
