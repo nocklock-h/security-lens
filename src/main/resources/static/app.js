@@ -26,6 +26,7 @@ let messages = {};
 let currentLanguage = "en";
 
 let analysisRequestId = 0;
+let deepAnalysisComplete = false;
 
 
 // ============================================================
@@ -543,6 +544,22 @@ async function analyzeImage() {
     const requestId =
         ++analysisRequestId;
 
+    deepAnalysisComplete = false;
+
+    protectButton.disabled = true;
+
+    protectButton.setAttribute(
+        "aria-disabled",
+        "true"
+    );
+
+    if (protectStatus) {
+        protectStatus.textContent =
+            t(
+                "ui.result.readyAfterAnalysis",
+                "Ready after analysis"
+            );
+    }
 
     showOnly(
         loadingSection
@@ -583,11 +600,6 @@ async function analyzeImage() {
 
 
         stopLoadingAnimation();
-
-
-        updateProtectionAvailability(
-            fastData
-        );
 
 
         renderAnalysis(
@@ -695,6 +707,9 @@ async function runDeepAnalysis(
             deepData;
 
 
+        deepAnalysisComplete = true;
+
+
         updateProtectionAvailability(
             deepData
         );
@@ -747,6 +762,22 @@ async function runDeepAnalysis(
             return;
         }
 
+        deepAnalysisComplete = false;
+
+        protectButton.disabled = true;
+
+        protectButton.setAttribute(
+            "aria-disabled",
+            "true"
+        );
+
+        if (protectStatus) {
+            protectStatus.textContent =
+                t(
+                    "ui.deep.protectionUnavailable",
+                    "Protection unavailable"
+                );
+        }
 
         showDeepAnalysisFailed();
     }
@@ -2130,6 +2161,14 @@ protectButton.addEventListener(
 function protectImage() {
 
     /*
+     * 최종 AI 분석이 정상 완료되기 전에는
+     * 보호 이미지를 생성하지 않는다.
+     */
+    if (!deepAnalysisComplete) {
+        return;
+    }
+
+    /*
         이미 보호 이미지가 만들어졌다면
         두 번째 클릭은 다운로드로 사용한다.
     */
@@ -2789,6 +2828,7 @@ function resetApplication() {
 
     analysisRequestId++;
 
+    deepAnalysisComplete = false;
 
     latestAnalysis =
         null;
