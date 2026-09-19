@@ -49,4 +49,4 @@ ENV PORT=8080
 
 EXPOSE 8080
 
-ENTRYPOINT ["sh", "-c", "java -Dserver.port=${PORT} -jar /app/app.jar"]
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]
