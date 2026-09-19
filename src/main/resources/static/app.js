@@ -20,6 +20,8 @@ let loadingInterval = null;
 let latestAnalysis = null;
 let protectedPreviewUrl = null;
 
+let protectedBlob = null;
+
 let messages = {};
 let currentLanguage = "en";
 
@@ -2365,6 +2367,7 @@ function protectImage() {
                 );
             }
 
+            protectedBlob = blob;
 
             protectedPreviewUrl =
                 URL.createObjectURL(
@@ -2424,9 +2427,12 @@ function protectImage() {
     );
 }
 
-function downloadProtectedImage() {
+async function downloadProtectedImage() {
 
-    if (!protectedPreviewUrl) {
+    if (
+        !protectedPreviewUrl ||
+        !protectedBlob
+    ) {
         return;
     }
 
@@ -2447,6 +2453,78 @@ function downloadProtectedImage() {
         "security-lens";
 
 
+    const downloadName =
+        `${originalName}-protected.${extension}`;
+
+
+    const file =
+        new File(
+            [protectedBlob],
+            downloadName,
+            {
+                type:
+                    protectedBlob.type ||
+                    (extension === "png"
+                        ? "image/png"
+                        : "image/jpeg")
+            }
+        );
+
+
+    /*
+     * 모바일 / 인앱 브라우저에서는
+     * Web Share API를 우선 사용한다.
+     *
+     * 카카오톡 등에서 blob 다운로드가 막혀도
+     * Android / iOS 시스템 공유창을 통해
+     * 이미지 저장 또는 다른 앱으로 공유할 수 있다.
+     */
+    const canShareFile =
+        typeof navigator.share === "function" &&
+        typeof navigator.canShare === "function" &&
+        navigator.canShare({
+            files: [file]
+        });
+
+
+    if (canShareFile) {
+
+        try {
+
+            await navigator.share({
+                files: [file],
+                title:
+                    t(
+                        "ui.result.protectedImage",
+                        "Security Lens Protected Image"
+                    )
+            });
+
+            return;
+
+        } catch (error) {
+
+            /*
+             * 사용자가 공유창을 직접 닫은 경우는
+             * 오류로 취급하지 않는다.
+             */
+            if (
+                error?.name === "AbortError"
+            ) {
+                return;
+            }
+
+            console.warn(
+                "Web Share failed. Falling back to download.",
+                error
+            );
+        }
+    }
+
+
+    /*
+     * PC Chrome / 일반 브라우저 fallback
+     */
     const link =
         document.createElement(
             "a"
@@ -2458,7 +2536,7 @@ function downloadProtectedImage() {
 
 
     link.download =
-        `${originalName}-protected.${extension}`;
+        downloadName;
 
 
     document.body.appendChild(
@@ -2660,10 +2738,11 @@ function resetApplication() {
         );
 
 
-        protectedPreviewUrl =
-            null;
+        protectedPreviewUrl = null;
+
     }
 
+    protectedBlob = null;
 
     selectedFile =
         null;
