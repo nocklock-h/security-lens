@@ -425,12 +425,51 @@ public class ImageAnalysisService {
                         .matcher(normalizedText)
                         .find();
 
+// 이름이 누락되었고 명시적 이름 필드 또는
+// 복수의 개인정보 신호가 있는 경우 Vision으로 보완
+        boolean hasPhone =
+                detectedItems.stream()
+                        .anyMatch(
+                                item ->
+                                        item.type()
+                                                == PiiType.PHONE
+                        );
 
-// 이름 라벨은 있는데 PERSON_NAME이 빠진 경우 Vision으로 보완
+
+        boolean hasEmail =
+                detectedItems.stream()
+                        .anyMatch(
+                                item ->
+                                        item.type()
+                                                == PiiType.EMAIL
+                        );
+
+
+        boolean hasAddress =
+                detectedItems.stream()
+                        .anyMatch(
+                                item ->
+                                        item.type()
+                                                == PiiType.ADDRESS
+                        );
+
+
+        boolean likelyPersonalDocument =
+                (hasPhone && hasEmail)
+                        ||
+                        (hasPhone && hasAddress)
+                        ||
+                        (hasEmail && hasAddress);
+
+
         boolean nameVisionNeeded =
-                hasExplicitNameLabel
+                !hasPersonName
                         &&
-                        !hasPersonName;
+                        (
+                                hasExplicitNameLabel
+                                        ||
+                                        likelyPersonalDocument
+                        );
 
 
         boolean needsDocumentVision =
