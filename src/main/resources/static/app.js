@@ -2486,6 +2486,25 @@ async function downloadProtectedImage() {
             files: [file]
         });
 
+    const userAgent =
+        navigator.userAgent || "";
+
+    const isAndroidKakao =
+        /Android/i.test(userAgent) &&
+        /KAKAOTALK/i.test(userAgent);
+
+    // TODO: 카카오톡 인앱 브라우저 안내 문구를
+    //       messages.properties / i18n 메시지 API로 분리한다.
+    if (isAndroidKakao) {
+
+        alert(
+            currentLanguage === "ko"
+                ? "카카오톡 브라우저에서는 이미지 저장이 제한됩니다.\n우측 상단 ⋮ 메뉴에서 '다른 브라우저로 열기'를 선택해 주세요."
+                : "Image saving is limited in the KakaoTalk browser.\nOpen the ⋮ menu and choose 'Open in another browser'."
+        );
+
+        return;
+    }
 
     if (canShareFile) {
 
