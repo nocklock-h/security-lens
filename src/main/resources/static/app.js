@@ -287,13 +287,38 @@ fileInput.addEventListener(
     "change",
     event => {
 
-        const file =
-            event.target.files?.[0];
+        const files =
+            event.target.files;
 
 
-        if (file) {
-            selectFile(file);
+        if (
+            !files ||
+            files.length === 0
+        ) {
+            return;
         }
+
+
+        if (files.length > 1) {
+
+            fileInput.value =
+                "";
+
+            // TODO: 다중 이미지 선택 안내 문구를
+            //       messages.properties / i18n 메시지 API로 분리한다.
+            showError(
+                currentLanguage === "ko"
+                    ? "이미지는 한 번에 한 장만 선택할 수 있습니다."
+                    : "Please select only one image at a time."
+            );
+
+            return;
+        }
+
+
+        selectFile(
+            files[0]
+        );
     }
 );
 
@@ -350,12 +375,31 @@ dropZone.addEventListener(
             event.dataTransfer?.files;
 
 
-        if (!files || files.length === 0) {
+        if (
+            !files ||
+            files.length === 0
+        ) {
             return;
         }
 
 
-        selectFile(files[0]);
+        if (files.length > 1) {
+
+            // TODO: 다중 이미지 선택 안내 문구를
+            //       messages.properties / i18n 메시지 API로 분리한다.
+            showError(
+                currentLanguage === "ko"
+                    ? "이미지는 한 번에 한 장만 선택할 수 있습니다."
+                    : "Please select only one image at a time."
+            );
+
+            return;
+        }
+
+
+        selectFile(
+            files[0]
+        );
     }
 );
 
@@ -2499,7 +2543,7 @@ async function downloadProtectedImage() {
 
         alert(
             currentLanguage === "ko"
-                ? "카카오톡 브라우저에서는 이미지 저장이 제한됩니다.\n우측 상단 ⋮ 메뉴에서 '다른 브라우저로 열기'를 선택해 주세요."
+                ? "카카오톡 브라우저에서는 이미지 저장이 제한됩니다.\n우측 ⋮ 메뉴에서 '다른 브라우저로 열기'를 선택해 주세요."
                 : "Image saving is limited in the KakaoTalk browser.\nOpen the ⋮ menu and choose 'Open in another browser'."
         );
 
