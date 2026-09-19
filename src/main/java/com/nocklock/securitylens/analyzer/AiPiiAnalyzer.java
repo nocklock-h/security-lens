@@ -147,6 +147,23 @@ public class AiPiiAnalyzer {
                             AiAnalysisResponse.class
                     );
 
+            log.info(
+                    "AI PII raw items={}",
+                    aiAnalysisResponse.detectedItems() == null
+                            ? List.of()
+                            : aiAnalysisResponse.detectedItems()
+                            .stream()
+                            .map(
+                                    item ->
+                                            item.type()
+                                                    + "(confidence="
+                                                    + item.confidence()
+                                                    + ", wordIds="
+                                                    + item.wordIds()
+                                                    + ")"
+                            )
+                            .toList()
+            );
 
             List<AiDetectedItem> validatedItems =
                     aiResultValidator.validate(
