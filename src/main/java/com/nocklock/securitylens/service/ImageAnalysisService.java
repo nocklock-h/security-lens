@@ -400,11 +400,43 @@ public class ImageAnalysisService {
                 aiResult.detectedItems()
         );
 
-        //AI 검증 필요여부
-        boolean needsDocumentVision =
+        // Document Vision 기본 fallback 조건
+        boolean baseDocumentVisionNeeded =
                 lowQualityOcr
                         ||
                         detectedItems.isEmpty();
+
+
+// 이미 이름이 탐지됐는지 확인
+        boolean hasPersonName =
+                detectedItems.stream()
+                        .anyMatch(
+                                item ->
+                                        item.type()
+                                                == PiiType.PERSON_NAME
+                        );
+
+
+// OCR 텍스트에 "이름:", "성명:" 같은 명확한 라벨이 있는지 확인
+        boolean hasExplicitNameLabel =
+                java.util.regex.Pattern.compile(
+                                "(?m)(?:^|\\s)(?:이름|성명)\\s*[:：]?"
+                        )
+                        .matcher(normalizedText)
+                        .find();
+
+
+// 이름 라벨은 있는데 PERSON_NAME이 빠진 경우 Vision으로 보완
+        boolean nameVisionNeeded =
+                hasExplicitNameLabel
+                        &&
+                        !hasPersonName;
+
+
+        boolean needsDocumentVision =
+                baseDocumentVisionNeeded
+                        ||
+                        nameVisionNeeded;
 
         //시간측정
         long aiDurationMs =
@@ -472,6 +504,26 @@ public class ImageAnalysisService {
                     }
 
 
+                    boolean alreadyDetected =
+                            detectedItems.stream()
+                                    .anyMatch(
+                                            item ->
+                                                    item.type()
+                                                            == piiType
+                                    );
+
+
+                    if (alreadyDetected) {
+
+                        log.debug(
+                                "Document vision field skipped because type already exists. type={}",
+                                piiType
+                        );
+
+                        continue;
+                    }
+
+
                     detectedItems.add(
                             new DetectedItem(
                                     "document-field-"
@@ -499,18 +551,24 @@ public class ImageAnalysisService {
 
 
                 /*
+                 * 기존 fallback 조건으로 Vision을 실행한 경우에만
                  * 문서 자체도 별도 항목으로 유지한다.
-                 * 세부 field가 실패해도 문서 전체 보호 가능.
+                 *
+                 * 이름 누락 보완용 Vision에서는
+                 * SENSITIVE_DOCUMENT 전체 항목을 추가하지 않는다.
                  */
-                detectedItems.add(
-                        new DetectedItem(
-                                "document-vision-1",
-                                PiiType.SENSITIVE_DOCUMENT,
-                                documentResult.documentType(),
-                                documentResult.confidence(),
-                                documentResult.boundingBox()
-                        )
-                );
+                if (baseDocumentVisionNeeded) {
+
+                    detectedItems.add(
+                            new DetectedItem(
+                                    "document-vision-1",
+                                    PiiType.SENSITIVE_DOCUMENT,
+                                    documentResult.documentType(),
+                                    documentResult.confidence(),
+                                    documentResult.boundingBox()
+                            )
+                    );
+                }
             }
 
 
