@@ -21,7 +21,7 @@ repositories {
 dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'com.drewnoakes:metadata-extractor:2.19.0'
-    implementation 'net.sourceforge.tess4j:tess4j:5.16.0'
+    implementation 'net.sourceforge.tess4j:tess4j:5.14.0'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'

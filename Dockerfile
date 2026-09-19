@@ -20,20 +20,17 @@ RUN ./gradlew clean bootJar -x test
 # ==============================
 # 2. RUNTIME STAGE
 # ==============================
-FROM eclipse-temurin:17-jre-jammy
+FROM eclipse-temurin:17-jre-alpine-3.22
 
 WORKDIR /app
-
-# Security Lens가 사용하는 OCR 언어 데이터
+ # Security Lens가 사용하는 OCR 언어 데이터
 COPY tessdata ./tessdata
-
-# Tess4J가 필요로 하는 Linux native Tesseract library
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        tesseract-ocr \
-        libtesseract-dev \
-        libleptonica-dev \
-    && rm -rf /var/lib/apt/lists/*
+ # Tess4J가 필요로 하는 Linux native Tesseract library
+RUN apk add --no-cache \
+     tesseract-ocr \
+     tesseract-ocr-dev \
+     leptonica \
+     leptonica-dev
 
 COPY --from=builder /app/build/libs/*.jar /tmp/
 
