@@ -47,9 +47,13 @@ public class PiiAnalyzer {
      */
     private static final Pattern RRN_PATTERN =
             Pattern.compile(
-                    "(?<!\\d)\\d{6}-?[1-4]\\d{6}(?!\\d)"
+                    "(?<!\\d)"
+                            + "\\d\\h*\\d\\h*\\d\\h*\\d\\h*\\d\\h*\\d"
+                            + "\\h*[-‐-‒–—−]?\\h*"
+                            + "[1-4]"
+                            + "\\h*\\d\\h*\\d\\h*\\d\\h*\\d\\h*\\d\\h*\\d"
+                            + "(?!\\d)"
             );
-
 
     /*
      * 대한민국 운전면허번호

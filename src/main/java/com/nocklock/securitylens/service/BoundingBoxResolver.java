@@ -1242,19 +1242,141 @@ public class BoundingBoxResolver {
 
                 .trim();
     }
+
+    public BoundingBox refineVisionBox(
+            BoundingBox visionBox,
+            List<OcrWord> words,
+            PiiType type
+    ) {
+
+        if (visionBox == null
+                || words == null
+                || words.isEmpty()) {
+
+            return visionBox;
+        }
+
+
+        List<OcrWord> matchedWords =
+                words.stream()
+                        .filter(word -> {
+
+                            double intersectionWidth =
+                                    Math.max(
+                                            0,
+                                            Math.min(
+                                                    visionBox.x()
+                                                            + visionBox.width(),
+                                                    word.x()
+                                                            + word.width()
+                                            )
+                                                    -
+                                                    Math.max(
+                                                            visionBox.x(),
+                                                            word.x()
+                                                    )
+                                    );
+
+
+                            double intersectionHeight =
+                                    Math.max(
+                                            0,
+                                            Math.min(
+                                                    visionBox.y()
+                                                            + visionBox.height(),
+                                                    word.y()
+                                                            + word.height()
+                                            )
+                                                    -
+                                                    Math.max(
+                                                            visionBox.y(),
+                                                            word.y()
+                                                    )
+                                    );
+
+
+                            if (intersectionWidth <= 0
+                                    || intersectionHeight <= 0) {
+
+                                return false;
+                            }
+
+
+                            double intersectionArea =
+                                    intersectionWidth
+                                            * intersectionHeight;
+
+
+                            double wordArea =
+                                    (double) word.width()
+                                            * word.height();
+
+
+                            if (wordArea <= 0) {
+                                return false;
+                            }
+
+
+                            /*
+                             * OCR Word 영역의 30% 이상이
+                             * Vision Box와 겹치면 같은 필드의
+                             * 실제 글자로 판단한다.
+                             */
+                            return intersectionArea / wordArea
+                                    >= 0.30;
+                        })
+                        .toList();
+
+
+        /*
+         * Vision은 필드를 찾았지만 OCR이 해당 글자를
+         * 읽지 못했을 수 있으므로 기존 Vision Box를 유지한다.
+         */
+        if (matchedWords.isEmpty()) {
+
+            return visionBox;
+        }
+
+
+        BoundingBox refinedBox =
+                union(
+                        matchedWords
+                );
+
+
+        return addSafetyPadding(
+                refinedBox,
+                type
+        );
+    }
+
     private BoundingBox addSafetyPadding(
             BoundingBox box,
             PiiType type
     ) {
 
-        double horizontalPadding =
+        double leftPadding =
                 switch (type) {
 
                     case ADDRESS ->
                             10.0;
 
                     case PERSON_NAME ->
-                            8.0;
+                            20.0;
+
+                    default ->
+                            4.0;
+                };
+
+
+        double rightPadding =
+                switch (type) {
+
+                    case ADDRESS ->
+                            10.0;
+
+                    case PERSON_NAME ->
+                            3.0;
 
                     default ->
                             4.0;
@@ -1279,7 +1401,7 @@ public class BoundingBoxResolver {
                 Math.max(
                         0,
                         box.x()
-                                - horizontalPadding
+                                - leftPadding
                 );
 
 
@@ -1295,7 +1417,8 @@ public class BoundingBoxResolver {
                 x,
                 y,
                 box.width()
-                        + horizontalPadding * 2,
+                        + leftPadding
+                        + rightPadding,
                 box.height()
                         + verticalPadding * 2
         );

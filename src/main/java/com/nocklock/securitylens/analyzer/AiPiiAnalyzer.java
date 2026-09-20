@@ -522,8 +522,20 @@ public class AiPiiAnalyzer {
             3. PERSON_NAME은 언어와 국가에 따라 표기 방식이 다를 수 있다.
             이름의 길이, 단어 수, 문자 종류, 성/이름 순서에 의존하지 않는다.
             
-            4. 여러 단어로 구성된 이름이라면
-            실제 사람 이름을 구성하는 모든 Word ID를 포함한다.
+                4. 여러 단어로 구성된 하나의 이름이라면
+                   그 사람의 이름을 구성하는 모든 Word ID를 포함한다.
+
+                4-1. 이미지에 PERSON_NAME이 여러 개 존재하면
+                     각 이름을 서로 다른 PERSON_NAME 항목으로 모두 반환한다.
+
+                4-2. 서로 다른 위치에 있는 이름들을
+                     하나의 PERSON_NAME 항목으로 합치지 않는다.
+
+                4-3. 동일한 이름이 이미지의 서로 다른 위치에 반복되어 있어도
+                     각 위치를 별도의 PERSON_NAME 항목으로 반환한다.
+
+                4-4. 하나의 PERSON_NAME 항목의 wordIds에는
+                     반드시 한 위치의 한 사람 이름에 해당하는 Word ID만 포함한다.
             
             5. ADDRESS는 현재 이미지의 문맥에서
             개인 또는 특정 대상의 위치를 구체적으로 식별할 수 있는 주소일 때만 반환한다.
@@ -555,21 +567,25 @@ public class AiPiiAnalyzer {
 
 
             반환 형식:
-
-            {
-              "detectedItems": [
                 {
-                  "type": "PERSON_NAME",
-                  "wordIds": [12],
-                  "confidence": 0.0
-                },
-                {
-                  "type": "ADDRESS",
-                  "wordIds": [20, 21, 22, 23],
-                  "confidence": 0.0
+                  "detectedItems": [
+                    {
+                      "type": "PERSON_NAME",
+                      "wordIds": [12],
+                      "confidence": 0.0
+                    },
+                    {
+                      "type": "PERSON_NAME",
+                      "wordIds": [30, 31],
+                      "confidence": 0.0
+                    },
+                    {
+                      "type": "ADDRESS",
+                      "wordIds": [20, 21, 22, 23],
+                      "confidence": 0.0
+                    }
+                  ]
                 }
-              ]
-            }
             """.formatted(
                 wordList
         );

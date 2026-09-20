@@ -27,6 +27,7 @@ import com.nocklock.securitylens.analyzer.DocumentVisionAnalyzer;
 import com.nocklock.securitylens.dto.DocumentVisionResult;
 
 import com.nocklock.securitylens.dto.DocumentFieldResult;
+import com.nocklock.securitylens.dto.BoundingBox;
 
 @Service
 public class ImageAnalysisService {
@@ -370,32 +371,15 @@ public class ImageAnalysisService {
         }
 
 
-        boolean aiDetectedAddress =
-                aiResult.detectedItems()
-                        .stream()
-                        .anyMatch(
-                                item ->
-                                        item.type()
-                                                == PiiType.ADDRESS
-                        );
-
-
         /*
-         * AI가 문맥 기반 주소를 찾았다면
-         * 기존 한국 주소 Regex 결과 대신 AI 주소를 사용.
+         * Rule 기반 결과와 AI 결과를 모두 유지한다.
          *
-         * AI가 실패하면 기존 Regex 주소가 그대로 fallback.
+         * 같은 타입의 개인정보가 여러 개 존재할 수 있으므로
+         * 타입만으로 기존 결과를 삭제하지 않는다.
+         *
+         * 실제 중복 여부는 BoundingBox가 연결된 이후
+         * 타입 + 위치 기준으로 판단한다.
          */
-        if (aiDetectedAddress) {
-
-            detectedItems.removeIf(
-                    item ->
-                            item.type()
-                                    == PiiType.ADDRESS
-            );
-        }
-
-
         detectedItems.addAll(
                 aiResult.detectedItems()
         );
@@ -407,75 +391,38 @@ public class ImageAnalysisService {
                         detectedItems.isEmpty();
 
 
-// 이미 이름이 탐지됐는지 확인
-        boolean hasPersonName =
-                detectedItems.stream()
-                        .anyMatch(
-                                item ->
-                                        item.type()
-                                                == PiiType.PERSON_NAME
-                        );
-
-
-// OCR 텍스트에 "이름:", "성명:" 같은 명확한 라벨이 있는지 확인
-        boolean hasExplicitNameLabel =
-                java.util.regex.Pattern.compile(
-                                "(?m)(?:^|\\s)(?:이름|성명)\\s*[:：]?"
-                        )
-                        .matcher(normalizedText)
-                        .find();
-
-// 이름이 누락되었고 명시적 이름 필드 또는
-// 복수의 개인정보 신호가 있는 경우 Vision으로 보완
-        boolean hasPhone =
-                detectedItems.stream()
-                        .anyMatch(
-                                item ->
-                                        item.type()
-                                                == PiiType.PHONE
-                        );
-
-
-        boolean hasEmail =
-                detectedItems.stream()
-                        .anyMatch(
-                                item ->
-                                        item.type()
-                                                == PiiType.EMAIL
-                        );
-
-
-        boolean hasAddress =
-                detectedItems.stream()
-                        .anyMatch(
-                                item ->
-                                        item.type()
-                                                == PiiType.ADDRESS
-                        );
-
-
-        boolean likelyPersonalDocument =
-                (hasPhone && hasEmail)
+        /*
+         * Document Vision이 보완할 수 있는 개인정보 필드의
+         * 명시적 라벨이 OCR에 존재하는지 확인한다.
+         *
+         * 개인정보 타입은 한 이미지 안에 여러 개 존재할 수 있으므로
+         * "이미 같은 타입이 하나 탐지됐다"는 이유로
+         * Vision 분석을 막지 않는다.
+         */
+        boolean hasVisionSupportedFieldLabel =
+                compactText.contains("이름")
                         ||
-                        (hasPhone && hasAddress)
+                        compactText.contains("성명")
                         ||
-                        (hasEmail && hasAddress);
-
-
-        boolean nameVisionNeeded =
-                !hasPersonName
-                        &&
-                        (
-                                hasExplicitNameLabel
-                                        ||
-                                        likelyPersonalDocument
-                        );
+                        compactText.contains("주민등록번호")
+                        ||
+                        compactText.contains("외국인등록번호")
+                        ||
+                        compactText.contains("주소")
+                        ||
+                        compactText.contains("생년월일")
+                        ||
+                        compactText.contains("여권번호")
+                        ||
+                        compactText.contains("운전면허번호")
+                        ||
+                        compactText.contains("운전면허");
 
 
         boolean needsDocumentVision =
                 baseDocumentVisionNeeded
                         ||
-                        nameVisionNeeded;
+                        hasVisionSupportedFieldLabel;
 
         //시간측정
         long aiDurationMs =
@@ -495,6 +442,12 @@ public class ImageAnalysisService {
                         ocrResult.words(),
                         aiResult.wordIdsById()
                 );
+
+        detectedItems =
+                removeDuplicateDetections(
+                        detectedItems
+                );
+
         if (needsDocumentVision) {
 
             long documentVisionStart =
@@ -542,20 +495,35 @@ public class ImageAnalysisService {
                         continue;
                     }
 
+                    BoundingBox refinedBox =
+                            boundingBoxResolver.refineVisionBox(
+                                    field.boundingBox(),
+                                    ocrResult.words(),
+                                    piiType
+                            );
 
                     boolean alreadyDetected =
                             detectedItems.stream()
                                     .anyMatch(
                                             item ->
-                                                    item.type()
-                                                            == piiType
+                                                    isSameDetection(
+                                                            item,
+                                                            piiType,
+                                                            field.boundingBox()
+                                                    )
+                                                            ||
+                                                            isSameDetection(
+                                                                    item,
+                                                                    piiType,
+                                                                    refinedBox
+                                                            )
                                     );
 
 
                     if (alreadyDetected) {
 
                         log.debug(
-                                "Document vision field skipped because type already exists. type={}",
+                                "Document vision field skipped as duplicate. type={}",
                                 piiType
                         );
 
@@ -576,7 +544,7 @@ public class ImageAnalysisService {
 
                                     field.confidence(),
 
-                                    field.boundingBox()
+                                    refinedBox
                             )
                     );
                 }
@@ -664,6 +632,189 @@ public class ImageAnalysisService {
                         metadataResult
                 )
         );
+    }
+
+    private List<DetectedItem> removeDuplicateDetections(
+            List<DetectedItem> items
+    ) {
+
+        List<DetectedItem> result =
+                new ArrayList<>();
+
+
+        for (DetectedItem candidate : items) {
+
+            boolean duplicate =
+                    result.stream()
+                            .anyMatch(
+                                    existing ->
+                                            isSameDetection(
+                                                    existing,
+                                                    candidate.type(),
+                                                    candidate.boundingBox()
+                                            )
+                            );
+
+
+            if (!duplicate) {
+
+                result.add(
+                        candidate
+                );
+            }
+        }
+
+
+        return result;
+    }
+
+    private boolean isSameDetection(
+            DetectedItem existing,
+            PiiType newType,
+            BoundingBox newBox
+    ) {
+
+        if (existing == null
+                || existing.type() != newType
+                || existing.boundingBox() == null
+                || newBox == null) {
+
+            return false;
+        }
+
+
+        BoundingBox existingBox =
+                existing.boundingBox();
+
+
+        double intersectionWidth =
+                Math.max(
+                        0,
+                        Math.min(
+                                existingBox.x() + existingBox.width(),
+                                newBox.x() + newBox.width()
+                        )
+                                -
+                                Math.max(
+                                        existingBox.x(),
+                                        newBox.x()
+                                )
+                );
+
+
+        double intersectionHeight =
+                Math.max(
+                        0,
+                        Math.min(
+                                existingBox.y() + existingBox.height(),
+                                newBox.y() + newBox.height()
+                        )
+                                -
+                                Math.max(
+                                        existingBox.y(),
+                                        newBox.y()
+                                )
+                );
+
+
+        if (intersectionWidth <= 0
+                || intersectionHeight <= 0) {
+
+            return false;
+        }
+
+
+        double intersectionArea =
+                intersectionWidth
+                        * intersectionHeight;
+
+
+        double existingArea =
+                existingBox.width()
+                        * existingBox.height();
+
+
+        double newArea =
+                newBox.width()
+                        * newBox.height();
+
+
+        double smallerArea =
+                Math.min(
+                        existingArea,
+                        newArea
+                );
+
+
+        if (smallerArea <= 0) {
+            return false;
+        }
+
+
+        /*
+         * 충분히 많이 겹치면 동일 개인정보로 판단한다.
+         */
+        double overlapRatio =
+                intersectionArea / smallerArea;
+
+
+        if (overlapRatio >= 0.60) {
+            return true;
+        }
+
+
+        /*
+         * Vision Box는 OCR Box보다 위치가 조금 밀릴 수 있다.
+         *
+         * 실제 영역이 서로 겹치고 있으면서
+         * 두 Box의 중심점도 충분히 가깝다면,
+         * 서로 다른 분석기가 같은 개인정보를
+         * 약간 다른 위치로 탐지한 것으로 판단한다.
+         */
+        double existingCenterX =
+                existingBox.x()
+                        + existingBox.width() / 2.0;
+
+        double existingCenterY =
+                existingBox.y()
+                        + existingBox.height() / 2.0;
+
+        double newCenterX =
+                newBox.x()
+                        + newBox.width() / 2.0;
+
+        double newCenterY =
+                newBox.y()
+                        + newBox.height() / 2.0;
+
+
+        double centerDistanceX =
+                Math.abs(
+                        existingCenterX - newCenterX
+                );
+
+        double centerDistanceY =
+                Math.abs(
+                        existingCenterY - newCenterY
+                );
+
+
+        double referenceWidth =
+                Math.max(
+                        existingBox.width(),
+                        newBox.width()
+                );
+
+        double referenceHeight =
+                Math.max(
+                        existingBox.height(),
+                        newBox.height()
+                );
+
+
+        return centerDistanceX <= referenceWidth
+                &&
+                centerDistanceY <= referenceHeight;
     }
 
     private String createDocumentFieldMaskedValue(
