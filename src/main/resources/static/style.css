@@ -1239,8 +1239,19 @@ button {
 
 .protect-button:disabled {
     cursor: not-allowed;
+    opacity: 1;
+    color: var(--text-muted);
+}
 
+.protect-button:disabled > span {
     opacity: 0.48;
+}
+
+.protect-button:disabled small {
+    color: var(--text-secondary);
+    opacity: 1;
+    font-size: 10px;
+    font-weight: 600;
 }
 
 .protect-button:not(:disabled) {
