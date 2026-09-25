@@ -10,9 +10,18 @@ Security Lens는 사진을 공유하기 전에
 눈에 보이는 개인정보와 숨겨진 메타데이터를 함께 분석하고,
 필요한 정보를 보호한 이미지를 다시 만들 수 있도록 돕는 서비스입니다.
 
+### Engineering Highlights
+
+- Fast Scan / Deep Analysis 분리로 빠른 초기 결과와 AI 심화 분석을 분리
+- Railway 운영 환경에서 k6 부하 테스트 후 OCR 동시 처리 메모리 문제를 분석하고 Semaphore 적용
+- Docker 기반 Linux 환경에서 Tesseract OCR과 Spring Boot 서비스 배포
+
 ## Live Demo
 
 https://securitylens.up.railway.app
+
+**Tech Stack**  
+Java 17 · Spring Boot · Tesseract OCR · OpenAI API · Docker · Railway · Vanilla JavaScript
 
 ## 왜 만들었나
 
