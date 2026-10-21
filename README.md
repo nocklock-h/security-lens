@@ -455,11 +455,6 @@ OCR은 운영체제의 native library 영향을 받기 때문에
 로컬 Windows 환경에서만 동작하는 것에 그치지 않도록
 Tesseract와 Leptonica가 포함된 Linux 컨테이너 환경으로 구성했습니다.
 
-```bash
-docker build -t security-lens .
-docker run -p 8080:8080 security-lens
-```
-
 Docker를 이용하면 Tesseract OCR과 Spring Boot 애플리케이션을 Linux 컨테이너 환경에서 실행할 수 있습니다.
 
 먼저 이미지를 빌드합니다.
