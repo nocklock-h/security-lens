@@ -1,5 +1,18 @@
 # Security Lens
 
+
+> **Document Status — Historical Development Guidelines (2026-10-21)**
+>
+> 이 문서는 Wanted AI Championship 2026 준비 당시 작성한 개발 지침을 포함합니다.
+> 일부 초기 API 설계와 구현 계획은 현재 코드와 다를 수 있습니다.
+>
+> 현재 구현 확인 시 다음 파일을 우선 참고합니다.
+> - `README.md`
+> - `src/main/java/com/nocklock/securitylens/controller/ImageController.java`
+> - `src/main/resources/static/app.js`
+>
+> 특히 이미지 보호 처리는 현재 서버의 `/protect` API가 아니라 브라우저 Canvas에서 수행합니다.
+
 Wanted AI Championship 2026 출품을 첫 번째 목표로 하는  
 AI 기반 개인정보 노출 탐지 및 보호 서비스다.
 
@@ -94,12 +107,19 @@ API 계약은 반드시 다음 문서를 기준으로 한다.
 docs/API-CONTRACT.md
 ```
 
-현재 MVP의 주요 API는 다음과 같다.
+현재 구현된 이미지 분석 API는 다음과 같다.
 
 ```text
 POST /api/v1/images/analyze
-POST /api/v1/images/protect
+POST /api/v1/images/analyze/fast
+POST /api/v1/images/analyze/deep
 ```
+
+`GET /api/v1/ui/messages`는 한국어·영어 UI 메시지를 제공합니다.
+
+이미지 마스킹과 메타데이터 제거를 위한 이미지 재생성은 브라우저 Canvas에서 수행하며, 서버의 `/api/v1/images/protect` 엔드포인트는 현재 구현되어 있지 않습니다.
+
+`docs/API-CONTRACT.md`는 초기 설계 문서이므로 현재 API 동작과 차이가 있을 수 있습니다. 실제 Controller와 DTO를 우선 확인합니다.
 
 다음 사항을 지킨다.
 
