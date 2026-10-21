@@ -303,14 +303,6 @@ Deep Analysis를 통해 AI 기반 심화 분석을 수행하고
 
 ## 실행 방법
 
-### 서비스 체험
-
-Security Lens는 별도의 회원가입이나 로그인 없이 사용할 수 있습니다.
-
-https://securitylens.up.railway.app
-
-JPG, JPEG, PNG 이미지를 한 장씩 업로드해 분석할 수 있습니다.
-
 ### 로컬 실행
 
 소스코드는 공개되어 있으며, 아래 명령어로 내려받을 수 있습니다.
