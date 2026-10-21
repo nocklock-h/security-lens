@@ -1,27 +1,37 @@
 # Security Lens
 
-> 사진 한 장은 생각보다 많은 것을 알고 있습니다.
+> 사진 속 개인정보와 숨겨진 메타데이터를 탐지하고, 공유하기 전에 보호할 수 있도록 돕는 이미지 개인정보 분석 서비스
 
-사진을 공유할 때 우리는 보통 화면에 보이는 내용만 확인합니다.
-하지만 사진에는 전화번호나 이름 같은 눈에 보이는 개인정보뿐 아니라
-촬영 위치, 촬영 시간, 사용 기기와 같은 메타데이터도 함께 남아 있을 수 있습니다.
-
-Security Lens는 사진을 공유하기 전에
-눈에 보이는 개인정보와 숨겨진 메타데이터를 함께 분석하고,
-필요한 정보를 보호한 이미지를 다시 만들 수 있도록 돕는 서비스입니다.
-
-### Engineering Highlights
-
-- Fast Scan / Deep Analysis 분리로 빠른 초기 결과와 AI 심화 분석을 분리
-- Railway 운영 환경에서 k6 부하 테스트 후 OCR 동시 처리 메모리 문제를 분석하고 Semaphore 적용
-- Docker 기반 Linux 환경에서 Tesseract OCR과 Spring Boot 서비스 배포
+**Java 17 · Spring Boot 4.1.1 · Tesseract OCR · OpenAI API · Docker · Railway · Vanilla JavaScript**
 
 ## Live Demo
 
 https://securitylens.up.railway.app
 
-**Tech Stack**  
-Java 17 · Spring Boot · Tesseract OCR · OpenAI API · Docker · Railway · Vanilla JavaScript
+## Engineering Highlights
+
+- **Fast Scan / Deep Analysis:** OCR·규칙 기반 개인정보 탐지·EXIF 분석 결과를 먼저 제공하고, AI 문맥 및 문서 분석으로 결과를 보완
+- **OCR Concurrency Control:** Railway 환경의 k6 부하 테스트에서 OCR 동시 실행에 따른 메모리 문제를 확인하고 Semaphore를 적용해 동시 OCR 작업을 최대 2개로 제한
+- **Image Protection:** 탐지 영역을 브라우저 Canvas에서 마스킹하고 이미지를 재생성하여 기존 메타데이터 제거
+- **Deployment:** Docker 기반 Linux 환경에 Tesseract OCR 및 Spring Boot 애플리케이션 배포
+
+## Architecture at a Glance
+
+```text
+Image Upload
+    ↓
+Spring Boot API
+    ├── Fast Scan: OCR + Rule-based PII Detection + EXIF
+    └── Deep Analysis: AI Context + Document Vision
+    ↓
+Risk Score + Detected Items + Bounding Boxes
+    ↓
+Browser Canvas: Selected PII Masking + Image Re-encoding
+    ↓
+Protected Image
+```
+
+**Project Context:** Wanted AI Championship 2026을 계기로 개발한 개인 MVP로, 이미지 개인정보 탐지부터 보호 이미지 생성까지의 흐름을 구현했습니다.
 
 ## 왜 만들었나
 
@@ -303,8 +313,14 @@ JPG, JPEG, PNG 이미지를 한 장씩 업로드해 분석할 수 있습니다.
 
 ### 로컬 실행
 
-현재 저장소는 Private으로 운영하고 있기 때문에
-저장소 접근 권한이 있는 환경을 기준으로 설명합니다.
+소스코드는 공개되어 있으며, 아래 명령어로 내려받을 수 있습니다.
+
+```bash
+git clone https://github.com/nocklock-h/security-lens.git
+cd security-lens
+```
+
+Deep Analysis를 사용하려면 `OPENAI_API_KEY` 환경변수 설정이 필요합니다.
 
 ### 요구 환경
 
@@ -452,8 +468,35 @@ docker build -t security-lens .
 docker run -p 8080:8080 security-lens
 ```
 
-배포 환경에서는 `PORT`와 AI API 관련 환경변수를
-외부에서 주입하도록 구성했습니다.
+Docker를 이용하면 Tesseract OCR과 Spring Boot 애플리케이션을 Linux 컨테이너 환경에서 실행할 수 있습니다.
+
+먼저 이미지를 빌드합니다.
+
+```bash
+docker build -t security-lens .
+```
+
+macOS 또는 Linux에서는 `OPENAI_API_KEY` 환경변수를 설정한 뒤 실행합니다.
+
+```bash
+docker run --rm -p 8080:8080 \
+  -e OPENAI_API_KEY="$OPENAI_API_KEY" \
+  security-lens
+```
+
+Windows PowerShell에서는 다음과 같이 실행합니다.
+
+```powershell
+docker run --rm -p 8080:8080 `
+  -e OPENAI_API_KEY=$env:OPENAI_API_KEY `
+  security-lens
+```
+
+실행 후 다음 주소로 접속할 수 있습니다.
+
+http://localhost:8080
+
+API Key는 Docker 이미지에 포함하지 않고 실행 환경에서 주입합니다.
 
 ## API
 
